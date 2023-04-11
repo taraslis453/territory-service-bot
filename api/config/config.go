@@ -12,6 +12,8 @@ type (
 	// Config - represent top level application configuration object.
 	Config struct {
 		Log
+		PostgreSQL
+		Telegram
 	}
 
 	// Log - represents logger configuration.
@@ -25,6 +27,10 @@ type (
 		Password string `env:"TS_POSTGRESQL_PASSWORD" env-default:"postgres"`
 		Host     string `env:"TS_POSTGRESQL_HOST"     env-default:"localhost"`
 		Database string `env:"TS_POSTGRESQL_DATABASE" env-default:"api"`
+	}
+
+	Telegram struct {
+		BotToken string `env:"TS_TELEGRAM_BOT_TOKEN" env-default:""`
 	}
 )
 
