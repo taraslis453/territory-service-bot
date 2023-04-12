@@ -28,11 +28,13 @@ func NewBot(options *Options) error {
 		return err
 	}
 
-	b.Handle(tb.OnPhoto, func(c tb.Context) error {
-		return nil
+	b.Handle("/start", options.Services.Bot.HandleStart)
+	b.Handle(tb.OnText, func(c tb.Context) error {
+		return options.Services.Bot.HandleMessage(c, b)
 	})
 	b.Handle("/menu", options.Services.Bot.RenderMenu)
-	b.Handle(tb.OnCallback, options.Services.Bot.HandleMenu)
+	b.Handle(tb.OnCallback, options.Services.Bot.HandleButton)
+	b.Handle(tb.OnPhoto, options.Services.Bot.HandleImageUpload)
 
 	b.Start()
 

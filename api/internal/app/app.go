@@ -7,14 +7,40 @@ import (
 
 	"github.com/taraslis453/territory-service-bot/config"
 	"github.com/taraslis453/territory-service-bot/internal/controller/telegram"
+	"github.com/taraslis453/territory-service-bot/internal/entity"
 	"github.com/taraslis453/territory-service-bot/internal/service"
+	"github.com/taraslis453/territory-service-bot/internal/storage"
+	"github.com/taraslis453/territory-service-bot/pkg/database"
 	"github.com/taraslis453/territory-service-bot/pkg/logging"
 )
 
 func Run(cfg *config.Config) {
 	logger := logging.NewZap(cfg.Log.Level)
 
-	storages := service.Storages{}
+	sql, err := database.NewPostgreSQL(&database.PostgreSQLConfig{
+		User:     cfg.PostgreSQL.User,
+		Password: cfg.PostgreSQL.Password,
+		Host:     cfg.PostgreSQL.Host,
+		Database: cfg.PostgreSQL.Database,
+	})
+	if err != nil {
+		logger.Fatal("failed to init postgresql", "err", err)
+	}
+
+	err = sql.DB.AutoMigrate(
+		&entity.User{},
+		&entity.Congregation{},
+		&entity.CongregationTerritory{},
+		&entity.CongregationTerritoryGroup{},
+	)
+	if err != nil {
+		logger.Fatal("automigration failed", "err", err)
+	}
+
+	storages := service.Storages{
+		User:         storage.NewUserStorage(sql),
+		Congregation: storage.NewCongregationStorage(sql),
+	}
 
 	serviceOptions := &service.Options{
 		Cfg:      cfg,
@@ -26,7 +52,7 @@ func Run(cfg *config.Config) {
 		Bot: service.NewBotService(serviceOptions),
 	}
 
-	err := telegram.NewBot(&telegram.Options{
+	err = telegram.NewBot(&telegram.Options{
 		Config:   cfg,
 		Logger:   logger,
 		Storages: storages,

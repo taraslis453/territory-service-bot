@@ -1,20 +1,22 @@
 package entity
 
 type Congregation struct {
-	ID    string             `json:"id" gorm:"type:uuid;primaryKey;default:uuid_generate_v4()"`
-	Users []CongregationUser `gorm:"foreignKey:CongregationID"`
+	ID     string                       `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()"`
+	Name   string                       `gorm:"uniqueIndex"`
+	Groups []CongregationTerritoryGroup `gorm:"foreignkey:CongregationID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
 }
 
-type CongregationUser struct {
-	ID              string `json:"id" gorm:"type:uuid;primaryKey;default:uuid_generate_v4()"`
-	CongregationID  string `json:"congregation_id" gorm:"type:uuid;primaryKey;default:uuid_generate_v4()"`
-	MessengerUserID string
-	Role            Role
+type CongregationTerritoryGroup struct {
+	ID             string `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()"`
+	CongregationID string `gorm:"type:uuid;index"`
+	Title          string // can be place name like Kiev, Lviv, etc.
 }
 
-type Role string
-
-const (
-	RoleAdmin     Role = "admin"
-	RolePublisher Role = "publisher"
-)
+type CongregationTerritory struct {
+	ID             string `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()"`
+	CongregationID string `gorm:"type:uuid;index"`
+	Title          string `gorm:"index"`
+	GroupID        string
+	FileID         string
+	Available      *bool
+}
