@@ -130,13 +130,12 @@ func (s *botService) handleCongregationJoinRequest(c tb.Context, b *tb.Bot) erro
 		return c.Send(MessageCongregationAdminNotFound)
 	}
 
-	userFullName := fmt.Sprintf("%s %s", c.Sender().FirstName, c.Sender().LastName)
-	if c.Sender().Username != "" {
-		userFullName += fmt.Sprintf(" (@%s)", c.Sender().Username)
-	}
-	message := fmt.Sprint("Користувач", userFullName, "хоче приєднатися", congregation.Name)
-
-	_, err = b.Send(&recepient{chatID: admin.MessengerUserID}, message, tb.ReplyMarkup{
+	message := MessageNewJoinRequest(&MessageNewJoinRequestOptions{
+		FirstName: c.Sender().FirstName,
+		LastName:  c.Sender().LastName,
+		Username:  c.Sender().Username,
+	})
+	_, err = b.Send(&recepient{chatID: admin.MessengerChatID}, message, &tb.ReplyMarkup{
 		InlineKeyboard: [][]tb.InlineButton{
 			{
 				tb.InlineButton{
@@ -155,7 +154,7 @@ func (s *botService) handleCongregationJoinRequest(c tb.Context, b *tb.Bot) erro
 		return err
 	}
 
-	return c.Send(MessageCongregationJoinRequestSent(congregation.Name))
+	return c.Send(MessageCongregationJoinRequestSent(congregation.Name), &tb.ReplyMarkup{}, tb.ModeMarkdown)
 }
 
 type recepient struct {
@@ -171,14 +170,30 @@ func (s *botService) RenderMenu(c tb.Context) error {
 		Named("RenderMenu").
 		With(c)
 
+	user, err := s.storages.User.GetUser(&GetUserFilter{
+		MessengerUserID: fmt.Sprint(c.Sender().ID),
+	})
+	if err != nil {
+		logger.Error("failed to get user by telegram id", "err", err)
+		return err
+	}
+	if user == nil {
+		logger.Info("user not found")
+		return c.Send(MessageUserNotFound)
+	}
+	if user.Role == "" {
+		logger.Info("user not joined to congregation")
+		return c.Send(MessageEnterCongregationName)
+	}
+
 	var buttons [][]string
-	isAdmin := true
-	if isAdmin {
+	if user.Role == entity.UserRoleAdmin {
 		buttons = [][]string{
 			{entity.ViewTerritoryListButton},
 			{entity.AddTerritoryButton},
 		}
-	} else {
+	}
+	if user.Role == entity.UserRolePublisher {
 		buttons = [][]string{
 			{entity.ViewTerritoryListButton},
 		}
@@ -326,6 +341,7 @@ func (s *botService) HandleImageUpload(c tb.Context) error {
 	return c.Send(fmt.Printf("Територія %s успішно додана в групу %s!", territoryName, groupName))
 }
 
+// NOTE HOWTO: send files
 // c.Send(&tb.Photo{File: tb.File{
 // 	FileID: c.Message().Photo.FileID,
 // }})

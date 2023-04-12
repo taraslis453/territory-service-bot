@@ -36,17 +36,31 @@ type BotService interface {
 }
 
 var (
-	MessageEnterCongregationName       = "Введіть назву збору, яку вам надав адміністратор"
-	MessageUserNotFound                = "Ви не зареєстровані в системі. Зверніться до адміністратора"
-	MessageCongregationNotFound        = "Збір не знайдено"
-	MessageCongregationAdminNotFound   = "Адміністраторa збору не знайдено"
+	MessageEnterCongregationName       = "Введіть назву збору, яку вам надав адміністратор ✍️"
+	MessageUserNotFound                = "Ви не зареєстровані в системі. Зверніться до адміністратора збору 📞"
+	MessageCongregationNotFound        = "Збір не знайдено 🤷"
+	MessageCongregationAdminNotFound   = "Адміністраторa збору не знайдено 🤷"
 	MessageCongregationJoinRequestSent = func(congregationName string) string {
-		return fmt.Sprintf("Запит на приєднання до збору *%s* відправлено. Очікуйте відповідь", congregationName)
+		return fmt.Sprintf("Запит на приєднання до збору *%s* відправлено. Очікуйте відповідь 😌", congregationName)
 	}
-	MessageWaitingForAdminApproval = "Очікуйте підтвердження адміністратора"
-	MessageHowCanIHelpYou          = "Чим можу допомогти?"
-	MessageAddTerritoryInstruction = "Надішліть зображення територій де назва файлу зображення відповідає зразку: *Група_назва* \nНаприклад: *Львів_123-а*, *Рівне_200*"
+	MessageWaitingForAdminApproval = "Очікуйте підтвердження адміністратора збору 😌"
+	MessageNewJoinRequest          = func(options *MessageNewJoinRequestOptions) string {
+		userFullName := fmt.Sprintf("%s %s", options.FirstName, options.LastName)
+		if options.Username != "" {
+			userFullName += fmt.Sprintf(" (@%s)", options.Username)
+		}
+		message := fmt.Sprint("Користувач ", userFullName, " хоче приєднатися")
+		return message
+	}
+	MessageHowCanIHelpYou          = "Чим можу допомогти? 🙂"
+	MessageAddTerritoryInstruction = "Надішліть зображення території де повідомлення відповідає зразку: *Група_назва* \nНаприклад: *Львів_123-а*, *Рівне_200* 📸"
 	MessageTerritoryExistsInGroup  = func(title string, groupTitle string) string {
-		return fmt.Sprintf("Територія з назвою *%s* вже існує в групі *%s*", title, groupTitle)
+		return fmt.Sprintf("Територія з назвою *%s* вже існує в групі *%s* 🤷", title, groupTitle)
 	}
 )
+
+type MessageNewJoinRequestOptions struct {
+	FirstName string
+	LastName  string
+	Username  string
+}
