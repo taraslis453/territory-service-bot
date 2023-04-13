@@ -40,6 +40,7 @@ var (
 	MessageUserNotFound                = "Ви не зареєстровані в системі. Зверніться до адміністратора збору 📞"
 	MessageCongregationNotFound        = "Збір не знайдено 🤷"
 	MessageCongregationAdminNotFound   = "Адміністраторa збору не знайдено 🤷"
+	MessageUserIsNotAdmin              = "Ви не є адміністратором збору 🤷"
 	MessageCongregationJoinRequestSent = func(congregationName string) string {
 		return fmt.Sprintf("Запит на приєднання до збору *%s* відправлено. Очікуйте відповідь 😌", congregationName)
 	}
@@ -57,6 +58,8 @@ var (
 	MessageTerritoryExistsInGroup  = func(title string, groupTitle string) string {
 		return fmt.Sprintf("Територія з назвою *%s* вже існує в групі *%s* 🤷", title, groupTitle)
 	}
+	MessageNoTerritoriesFound = "Території не знайдено 🤷"
+	MessageTerritoryList      = "Список кількості доступних територій:"
 )
 
 type MessageNewJoinRequestOptions struct {

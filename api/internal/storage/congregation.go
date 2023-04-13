@@ -115,3 +115,46 @@ func (r *congregationStorage) GetTerritory(filter *service.GetTerritoryFilter) (
 
 	return &territory, nil
 }
+
+func (r *congregationStorage) ListTerritories(filter *service.ListTerritoriesFilter) ([]entity.CongregationTerritory, error) {
+	stmt := r.Instance()
+	if filter.CongregationID != "" {
+		stmt = stmt.Where(&entity.CongregationTerritory{CongregationID: filter.CongregationID})
+	}
+	if filter.GroupID != "" {
+		stmt = stmt.Where(&entity.CongregationTerritory{GroupID: filter.GroupID})
+	}
+	if filter.Available != nil {
+		stmt = stmt.Where(&entity.CongregationTerritory{IsAvailable: filter.Available})
+	}
+
+	var territories []entity.CongregationTerritory
+	err := stmt.
+		Find(&territories).
+		Error
+	if err != nil {
+		return nil, err
+	}
+
+	return territories, nil
+}
+
+func (r *congregationStorage) ListTerritoryGroups(filter *service.ListTerritoryGroupsFilter) ([]entity.CongregationTerritoryGroup, error) {
+	stmt := r.Instance()
+	if filter.CongregationID != "" {
+		stmt = stmt.Where(&entity.CongregationTerritoryGroup{CongregationID: filter.CongregationID})
+	}
+	if len(filter.IDs) > 0 {
+		stmt = stmt.Where("id IN (?)", filter.IDs)
+	}
+
+	var groups []entity.CongregationTerritoryGroup
+	err := stmt.
+		Find(&groups).
+		Error
+	if err != nil {
+		return nil, err
+	}
+
+	return groups, nil
+}

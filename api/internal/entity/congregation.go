@@ -18,5 +18,5 @@ type CongregationTerritory struct {
 	Title          string `gorm:"index"`
 	GroupID        string
 	FileID         string
-	Available      *bool
+	IsAvailable    *bool
 }

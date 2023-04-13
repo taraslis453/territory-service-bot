@@ -94,6 +94,8 @@ func (s *botService) HandleMessage(c tb.Context, b *tb.Bot) error {
 	switch user.Stage {
 	case entity.UserPublisherStageEnterCongregationName:
 		return s.handleCongregationJoinRequest(c, b)
+	case entity.UserAdminStageSendTerritory:
+		return s.sendAddTerritoryInstruction(c)
 	default:
 		// TODO: handle other cases
 		return nil
@@ -226,6 +228,10 @@ func (s *botService) renderInlineKeyboard(buttons [][]string) *tb.ReplyMarkup {
 }
 
 func (s *botService) HandleButton(c tb.Context) error {
+	logger := s.logger.
+		Named("HandleButton").
+		With(c)
+
 	var err error
 	defer func() {
 		err = c.Respond() // respond to the callback to remove the loading state
@@ -234,23 +240,115 @@ func (s *botService) HandleButton(c tb.Context) error {
 		return err
 	}
 
-	// TODO: check for admin or publisher allow actions
+	user, err := s.storages.User.GetUser(&GetUserFilter{
+		MessengerUserID: fmt.Sprint(c.Sender().ID),
+	})
+	if err != nil {
+		logger.Error("failed to get user by messenger user id", "err", err)
+		return err
+	}
+	if user == nil {
+		logger.Info("user not found")
+		return c.Send(MessageUserNotFound)
+	}
 
 	data := c.Data()
 	data = strings.Replace(data, "\f", "", -1)
 
 	switch data {
-	case entity.ViewTerritoryListButton:
-		return c.Send("You clicked view territory list button!")
 	case entity.AddTerritoryButton:
-		return s.handleAddTerritory(c)
+		return s.handleAddTerritory(c, user)
+	case entity.ViewTerritoryListButton:
+		return s.handleViewTerritoryList(c, user)
 	default:
 		return fmt.Errorf("unknown button: %s", data)
 	}
 }
 
-func (s *botService) handleAddTerritory(c tb.Context) error {
+func (s *botService) handleAddTerritory(c tb.Context, user *entity.User) error {
+	logger := s.logger.
+		Named("handleAddTerritory").
+		With(c)
+
+	if user.Role != entity.UserRoleAdmin {
+		logger.Info("user is not admin")
+		return c.Send(MessageUserIsNotAdmin)
+	}
+
+	user.Stage = entity.UserAdminStageSendTerritory
+	_, err := s.storages.User.UpdateUser(user)
+	if err != nil {
+		logger.Error("failed to update user", "err", err)
+		return err
+	}
+
 	return s.sendAddTerritoryInstruction(c)
+}
+
+func (s *botService) handleViewTerritoryList(c tb.Context, user *entity.User) error {
+	logger := s.logger.
+		Named("handleViewTerritoryList").
+		With(c)
+
+	var showAvailableTerritories *bool
+	if user.Role != entity.UserRoleAdmin {
+		logger.Info("user is not admin")
+		showAvailableTerritories = &[]bool{false}[0]
+	}
+
+	territories, err := s.storages.Congregation.ListTerritories(&ListTerritoriesFilter{
+		CongregationID: user.CongregationID,
+		Available:      showAvailableTerritories,
+	})
+	if err != nil {
+		logger.Error("failed to list territories", "err", err)
+		return err
+	}
+	if len(territories) == 0 {
+		logger.Info("no territories found")
+		return c.Send(MessageNoTerritoriesFound)
+	}
+
+	var groupIDs []string
+	for _, territory := range territories {
+		groupIDs = append(groupIDs, territory.GroupID)
+	}
+
+	groups, err := s.storages.Congregation.ListTerritoryGroups(&ListTerritoryGroupsFilter{
+		IDs: groupIDs,
+	})
+	if err != nil {
+		logger.Error("failed to list groups", "err", err)
+		return err
+	}
+	if len(groups) == 0 {
+		logger.Error("no groups found")
+		return nil
+	}
+
+	groupIDTitles := make(map[string]string)
+	for _, group := range groups {
+		groupIDTitles[group.ID] = group.Title
+	}
+
+	countAvailableTerritoriesInGroups := make(map[string]int)
+	for _, territory := range territories {
+		groupTitle, ok := groupIDTitles[territory.GroupID]
+		if !ok {
+			logger.Warn("group title not found", "group_id", territory.GroupID)
+			continue
+		}
+		countAvailableTerritoriesInGroups[groupTitle]++
+	}
+
+	var buttons [][]string
+	for groupName, territoriesCount := range countAvailableTerritoriesInGroups {
+		buttons = append(buttons, []string{fmt.Sprintf("%s (%d)", groupName, territoriesCount)})
+	}
+
+	return c.Send(MessageTerritoryList, &tb.SendOptions{
+		ReplyMarkup: s.renderInlineKeyboard(buttons),
+	}, tb.ModeMarkdown)
 }
 
 func (s *botService) sendAddTerritoryInstruction(c tb.Context) error {
@@ -292,7 +390,7 @@ func (s *botService) HandleImageUpload(c tb.Context) error {
 
 	msg := c.Message()
 	fileID := msg.Photo.FileID
-	caption := msg.Photo.Caption
+	caption := msg.Caption
 	if caption == "" || !strings.Contains(caption, "_") {
 		return s.sendAddTerritoryInstruction(c)
 	}
@@ -326,10 +424,11 @@ func (s *botService) HandleImageUpload(c tb.Context) error {
 
 	available := true
 	territory, err = s.storages.Congregation.CreateTerritory(&entity.CongregationTerritory{
-		Title:     territoryName,
-		GroupID:   group.ID,
-		FileID:    fileID,
-		Available: &available,
+		CongregationID: congregation.ID,
+		GroupID:        group.ID,
+		Title:          territoryName,
+		FileID:         fileID,
+		IsAvailable:    &available,
 	})
 	if err != nil {
 		logger.Error("failed to create territory", "err", err)
@@ -338,7 +437,7 @@ func (s *botService) HandleImageUpload(c tb.Context) error {
 	logger.With("territory", territory)
 
 	logger.Info("successfully handled image upload")
-	return c.Send(fmt.Printf("Територія %s успішно додана в групу %s!", territoryName, groupName))
+	return c.Send(fmt.Sprintf("Територія %s успішно додана в групу %s!", territoryName, groupName), &tb.SendOptions{}, tb.ModeMarkdown)
 }
 
 // NOTE HOWTO: send files

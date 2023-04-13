@@ -24,6 +24,8 @@ type CongregationStorage interface {
 	GetOrCreateCongregationTerritoryGroup(options *CreateOrGetCongregationTerritoryGroupOptions) (*entity.CongregationTerritoryGroup, error)
 	CreateTerritory(*entity.CongregationTerritory) (*entity.CongregationTerritory, error)
 	GetTerritory(filter *GetTerritoryFilter) (*entity.CongregationTerritory, error)
+	ListTerritories(filter *ListTerritoriesFilter) ([]entity.CongregationTerritory, error)
+	ListTerritoryGroups(filter *ListTerritoryGroupsFilter) ([]entity.CongregationTerritoryGroup, error)
 }
 
 type GetCongregationFilter struct {
@@ -40,4 +42,15 @@ type GetTerritoryFilter struct {
 	CongregationID string
 	Title          string
 	GroupID        string
+}
+
+type ListTerritoriesFilter struct {
+	CongregationID string
+	GroupID        string
+	Available      *bool
+}
+
+type ListTerritoryGroupsFilter struct {
+	CongregationID string
+	IDs            []string
 }
