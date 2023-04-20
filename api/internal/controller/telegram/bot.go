@@ -33,7 +33,9 @@ func NewBot(options *Options) error {
 		return options.Services.Bot.HandleMessage(c, b)
 	})
 	b.Handle("/menu", options.Services.Bot.RenderMenu)
-	b.Handle(tb.OnCallback, options.Services.Bot.HandleButton)
+	b.Handle(tb.OnCallback, func(c tb.Context) error {
+		return options.Services.Bot.HandleButton(c, b)
+	})
 	b.Handle(tb.OnPhoto, options.Services.Bot.HandleImageUpload)
 
 	b.Start()

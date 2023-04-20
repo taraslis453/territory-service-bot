@@ -19,4 +19,5 @@ type CongregationTerritory struct {
 	GroupID        string
 	FileID         string
 	IsAvailable    *bool
+	InUseByUserID  *string
 }

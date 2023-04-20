@@ -5,6 +5,7 @@ type User struct {
 	CongregationID  string
 	MessengerUserID string
 	MessengerChatID string
+	FullName        string
 	Role            UserRole
 	Stage           UserStage
 }
@@ -19,8 +20,10 @@ const (
 type UserStage string
 
 const (
-	UserPublisherStageEnterCongregationName   UserStage = "user_publisher_enter_congregation_name"
-	UserPublisherStageWaitingForAdminApproval UserStage = "user_publisher_waiting_for_admin_approval"
-	UserStageSelectActionFromMenu             UserStage = "user_select_action_from_menu"
-	UserAdminStageSendTerritory               UserStage = "user_admin_send_territory"
+	UserPublisherStageEnterFullName                   UserStage = "user_publisher_enter_full_name"
+	UserPublisherStageEnterCongregationName           UserStage = "user_publisher_enter_congregation_name"
+	UserPublisherStageWaitingForAdminApproval         UserStage = "user_publisher_waiting_for_admin_approval"
+	UserPublisherStageCongregationJoinRequestRejected UserStage = "user_publisher_congregation_join_request_rejected"
+	UserStageSelectActionFromMenu                     UserStage = "user_select_action_from_menu"
+	UserAdminStageSendTerritory                       UserStage = "user_admin_send_territory"
 )

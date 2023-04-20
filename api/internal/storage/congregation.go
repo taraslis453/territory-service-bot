@@ -44,7 +44,7 @@ func (r *congregationStorage) GetCongregation(filter *service.GetCongregationFil
 	return &congregation, nil
 }
 
-func (r *congregationStorage) GetOrCreateCongregationTerritoryGroup(options *service.CreateOrGetCongregationTerritoryGroupOptions) (*entity.CongregationTerritoryGroup, error) {
+func (r *congregationStorage) GetOrCreateCongregationTerritoryGroup(options *service.GetOrCreateCongregationTerritoryGroupOptions) (*entity.CongregationTerritoryGroup, error) {
 	territoryGroup := entity.CongregationTerritoryGroup{}
 	err := r.Instance().
 		Where(&entity.CongregationTerritoryGroup{CongregationID: options.CongregationID, Title: options.Title}).
@@ -100,6 +100,9 @@ func (r *congregationStorage) GetTerritory(filter *service.GetTerritoryFilter) (
 	}
 	if filter.Title != "" {
 		stmt = stmt.Where(&entity.CongregationTerritory{Title: filter.Title})
+	}
+	if filter.ID != "" {
+		stmt = stmt.Where(&entity.CongregationTerritory{ID: filter.ID})
 	}
 
 	territory := entity.CongregationTerritory{}
@@ -157,4 +160,13 @@ func (r *congregationStorage) ListTerritoryGroups(filter *service.ListTerritoryG
 	}
 
 	return groups, nil
+}
+
+func (r *congregationStorage) UpdateTerritory(territory *entity.CongregationTerritory) (*entity.CongregationTerritory, error) {
+	err := r.Instance().Save(territory).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return territory, nil
 }

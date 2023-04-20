@@ -14,6 +14,7 @@ type UserStorage interface {
 }
 
 type GetUserFilter struct {
+	ID              string
 	MessengerUserID string
 	CongregationID  string
 	Role            entity.UserRole
@@ -21,11 +22,12 @@ type GetUserFilter struct {
 
 type CongregationStorage interface {
 	GetCongregation(filter *GetCongregationFilter) (*entity.Congregation, error)
-	GetOrCreateCongregationTerritoryGroup(options *CreateOrGetCongregationTerritoryGroupOptions) (*entity.CongregationTerritoryGroup, error)
+	GetOrCreateCongregationTerritoryGroup(options *GetOrCreateCongregationTerritoryGroupOptions) (*entity.CongregationTerritoryGroup, error)
 	CreateTerritory(*entity.CongregationTerritory) (*entity.CongregationTerritory, error)
 	GetTerritory(filter *GetTerritoryFilter) (*entity.CongregationTerritory, error)
 	ListTerritories(filter *ListTerritoriesFilter) ([]entity.CongregationTerritory, error)
 	ListTerritoryGroups(filter *ListTerritoryGroupsFilter) ([]entity.CongregationTerritoryGroup, error)
+	UpdateTerritory(territory *entity.CongregationTerritory) (*entity.CongregationTerritory, error)
 }
 
 type GetCongregationFilter struct {
@@ -33,12 +35,13 @@ type GetCongregationFilter struct {
 	Name string
 }
 
-type CreateOrGetCongregationTerritoryGroupOptions struct {
+type GetOrCreateCongregationTerritoryGroupOptions struct {
 	CongregationID string
 	Title          string
 }
 
 type GetTerritoryFilter struct {
+	ID             string
 	CongregationID string
 	Title          string
 	GroupID        string

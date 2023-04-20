@@ -39,6 +39,9 @@ func (r *userStorage) CreateUser(user *entity.User) (*entity.User, error) {
 
 func (r *userStorage) GetUser(filter *service.GetUserFilter) (*entity.User, error) {
 	stmt := r.Instance()
+	if filter.ID != "" {
+		stmt = stmt.Where(&entity.User{ID: filter.ID})
+	}
 	if filter.MessengerUserID != "" {
 		stmt = stmt.Where(&entity.User{MessengerUserID: filter.MessengerUserID})
 	}

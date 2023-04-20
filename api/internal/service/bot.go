@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/taraslis453/territory-service-bot/internal/entity"
@@ -24,6 +25,13 @@ func NewBotService(options *Options) *botService {
 	}
 }
 
+// NOTE: using short names because of telegram button query limit of 64 bytes
+const approvePublisherJoinRequestButtonUnique = "ap"
+const rejectPublisherJoinRequestButtonUnique = "rp"
+const territoryGroupButtonUnique = "-tg"
+const takeTerritoryButtonUnique = "-tt"
+const approveTerritoryTakeButtonPrefix = "-att"
+
 func (s *botService) HandleStart(c tb.Context) error {
 	logger := s.logger.
 		Named("HandleStart").
@@ -42,22 +50,29 @@ func (s *botService) HandleStart(c tb.Context) error {
 		_, err := s.storages.User.CreateUser(&entity.User{
 			MessengerUserID: fmt.Sprint(c.Sender().ID),
 			MessengerChatID: fmt.Sprint(c.Chat().ID),
-			Stage:           entity.UserPublisherStageEnterCongregationName,
+			Stage:           entity.UserPublisherStageEnterFullName,
 		})
 		if err != nil {
 			logger.Error("failed to create user", "error", err)
 			return err
 		}
 
-		return c.Send(MessageEnterCongregationName)
+		return c.Send(MessageEnterFullName)
 	}
-	if user.CongregationID == "" && user.Stage == entity.UserPublisherStageEnterCongregationName {
-		logger.Info("user not joined to congregation")
-		return c.Send(MessageEnterCongregationName)
+	if user.FullName == "" && user.Stage == entity.UserPublisherStageEnterFullName {
+		logger.Info("user full name not set")
+		return c.Send(MessageEnterFullName)
 	}
-	if user.Stage == entity.UserPublisherStageWaitingForAdminApproval {
+	if user.Stage == entity.UserPublisherStageEnterCongregationName {
 		logger.Info("user waiting for admin approval")
 		return c.Send(MessageWaitingForAdminApproval)
+	}
+
+	user.Stage = entity.UserStageSelectActionFromMenu
+	_, err = s.storages.User.UpdateUser(user)
+	if err != nil {
+		logger.Error("failed to update user", "error", err)
+		return err
 	}
 
 	return s.RenderMenu(c)
@@ -92,19 +107,39 @@ func (s *botService) HandleMessage(c tb.Context, b *tb.Bot) error {
 	logger.Info("user found")
 
 	switch user.Stage {
+	case entity.UserPublisherStageEnterFullName:
+		return s.handlePublisherFullName(c, user)
 	case entity.UserPublisherStageEnterCongregationName:
-		return s.handleCongregationJoinRequest(c, b)
+		return s.handleCongregationPublisherJoinRequest(c, b, user)
+	case entity.UserPublisherStageWaitingForAdminApproval:
+		return c.Send(MessageWaitingForAdminApproval)
 	case entity.UserAdminStageSendTerritory:
 		return s.sendAddTerritoryInstruction(c)
 	default:
-		// TODO: handle other cases
-		return nil
+		return s.RenderMenu(c)
 	}
 }
 
-func (s *botService) handleCongregationJoinRequest(c tb.Context, b *tb.Bot) error {
+func (s *botService) handlePublisherFullName(c tb.Context, user *entity.User) error {
 	logger := s.logger.
-		Named("handleCongregationJoinRequest").
+		Named("handlePublisherFullName").
+		With(c).
+		With("fullName", c.Message().Text)
+
+	user.FullName = c.Message().Text
+	user.Stage = entity.UserPublisherStageEnterCongregationName
+	_, err := s.storages.User.UpdateUser(user)
+	if err != nil {
+		logger.Error("failed to update user", "error", err)
+		return err
+	}
+
+	return c.Send(MessageEnterCongregationName)
+}
+
+func (s *botService) handleCongregationPublisherJoinRequest(c tb.Context, b *tb.Bot, user *entity.User) error {
+	logger := s.logger.
+		Named("handleCongregationPublisherJoinRequest").
 		With("congregationName", c.Message().Text)
 
 	congregation, err := s.storages.Congregation.GetCongregation(&GetCongregationFilter{
@@ -132,27 +167,36 @@ func (s *botService) handleCongregationJoinRequest(c tb.Context, b *tb.Bot) erro
 		return c.Send(MessageCongregationAdminNotFound)
 	}
 
-	message := MessageNewJoinRequest(&MessageNewJoinRequestOptions{
+	// NOTE using this because we can't pass more than 64 bytes in callback data
+	// https://github.com/nmlorg/metabot/issues/1
+	message := fmt.Sprintf("<a href=\"tg://btn/%s\">\u200b</a> %s", user.ID, MessageNewJoinRequest(&MessageNewJoinRequestOptions{
 		FirstName: c.Sender().FirstName,
 		LastName:  c.Sender().LastName,
 		Username:  c.Sender().Username,
-	})
+	}))
 	_, err = b.Send(&recepient{chatID: admin.MessengerChatID}, message, &tb.ReplyMarkup{
 		InlineKeyboard: [][]tb.InlineButton{
 			{
 				tb.InlineButton{
-					Unique: entity.ApprovePublisherButton,
+					Unique: approvePublisherJoinRequestButtonUnique,
 					Text:   entity.ApprovePublisherButton,
 				},
 				tb.InlineButton{
-					Unique: entity.RejectPublisherButton,
+					Unique: rejectPublisherJoinRequestButtonUnique,
 					Text:   entity.RejectPublisherButton,
 				},
 			},
 		},
-	})
+	}, tb.ModeHTML)
 	if err != nil {
 		logger.Error("failed to send message to admin", "err", err)
+		return err
+	}
+
+	user.Stage = entity.UserPublisherStageWaitingForAdminApproval
+	_, err = s.storages.User.UpdateUser(user)
+	if err != nil {
+		logger.Error("failed to update user", "err", err)
 		return err
 	}
 
@@ -188,46 +232,29 @@ func (s *botService) RenderMenu(c tb.Context) error {
 		return c.Send(MessageEnterCongregationName)
 	}
 
-	var buttons [][]string
+	var buttons [][]tb.InlineButton
 	if user.Role == entity.UserRoleAdmin {
-		buttons = [][]string{
-			{entity.ViewTerritoryListButton},
-			{entity.AddTerritoryButton},
+		buttons = [][]tb.InlineButton{
+			{tb.InlineButton{Unique: entity.ViewTerritoryListButton, Text: entity.ViewTerritoryListButton}},
+			{tb.InlineButton{Unique: entity.AddTerritoryButton, Text: entity.AddTerritoryButton}},
 		}
 	}
 	if user.Role == entity.UserRolePublisher {
-		buttons = [][]string{
-			{entity.ViewTerritoryListButton},
+		buttons = [][]tb.InlineButton{
+			{tb.InlineButton{Unique: entity.ViewTerritoryListButton, Text: entity.ViewTerritoryListButton}},
 		}
 	}
 	logger.With("buttons", buttons)
 	logger.Info("successfully rendered menu buttons")
 
 	return c.Send(MessageHowCanIHelpYou, &tb.SendOptions{
-		ReplyMarkup: s.renderInlineKeyboard(buttons),
+		ReplyMarkup: &tb.ReplyMarkup{
+			InlineKeyboard: buttons,
+		},
 	})
 }
 
-func (s *botService) renderInlineKeyboard(buttons [][]string) *tb.ReplyMarkup {
-	inlineKeyboard := &tb.ReplyMarkup{}
-
-	for _, row := range buttons {
-		var buttonRow []tb.InlineButton
-		for _, buttonText := range row {
-			button := tb.InlineButton{
-				// NOTE: we relly on the fact that button text is unique
-				Unique: buttonText,
-				Text:   buttonText,
-			}
-			buttonRow = append(buttonRow, button)
-		}
-		inlineKeyboard.InlineKeyboard = append(inlineKeyboard.InlineKeyboard, buttonRow)
-	}
-
-	return inlineKeyboard
-}
-
-func (s *botService) HandleButton(c tb.Context) error {
+func (s *botService) HandleButton(c tb.Context, b *tb.Bot) error {
 	logger := s.logger.
 		Named("HandleButton").
 		With(c)
@@ -255,11 +282,24 @@ func (s *botService) HandleButton(c tb.Context) error {
 	data := c.Data()
 	data = strings.Replace(data, "\f", "", -1)
 
-	switch data {
-	case entity.AddTerritoryButton:
+	switch {
+	case data == entity.AddTerritoryButton:
 		return s.handleAddTerritory(c, user)
-	case entity.ViewTerritoryListButton:
-		return s.handleViewTerritoryList(c, user)
+	case data == entity.ViewTerritoryListButton:
+		return s.handleViewTerritoryGroupList(c, user)
+	case strings.Contains(data, approvePublisherJoinRequestButtonUnique):
+		publisherID := strings.Replace(c.Message().Entities[0].URL, "tg://btn/", "", -1)
+		return s.handleApprovePublisherJoinRequest(c, b, user, publisherID)
+	case strings.Contains(data, rejectPublisherJoinRequestButtonUnique):
+		publisherID := strings.Replace(c.Message().Entities[0].URL, "tg://btn/", "", -1)
+		return s.handleRejectPublisherJoinRequest(c, b, user, publisherID)
+	case strings.Contains(data, territoryGroupButtonUnique):
+		groupName := strings.Replace(data, territoryGroupButtonUnique, "", -1)
+		return s.handleViewTerritoriesList(c, user, groupName)
+	case strings.Contains(data, takeTerritoryButtonUnique):
+		territoryID := strings.Replace(data, takeTerritoryButtonUnique, "", -1)
+		return s.handleTakeTerritoryRequest(c, b, user, territoryID)
+		// TODO: implement approve and reject buttons handlers for approve user and approve territory take
 	default:
 		return fmt.Errorf("unknown button: %s", data)
 	}
@@ -285,7 +325,7 @@ func (s *botService) handleAddTerritory(c tb.Context, user *entity.User) error {
 	return s.sendAddTerritoryInstruction(c)
 }
 
-func (s *botService) handleViewTerritoryList(c tb.Context, user *entity.User) error {
+func (s *botService) handleViewTerritoryGroupList(c tb.Context, user *entity.User) error {
 	logger := s.logger.
 		Named("handleViewTerritoryList").
 		With(c)
@@ -341,18 +381,300 @@ func (s *botService) handleViewTerritoryList(c tb.Context, user *entity.User) er
 		countAvailableTerritoriesInGroups[groupTitle]++
 	}
 
-	var buttons [][]string
+	var buttons [][]tb.InlineButton
 	for groupName, territoriesCount := range countAvailableTerritoriesInGroups {
-		buttons = append(buttons, []string{fmt.Sprintf("%s (%d)", groupName, territoriesCount)})
+		buttons = append(buttons, []tb.InlineButton{
+			{
+				Unique: groupName + territoryGroupButtonUnique,
+				Text:   groupName + " (" + strconv.Itoa(territoriesCount) + ")",
+			},
+		})
 	}
 
 	return c.Send(MessageTerritoryList, &tb.SendOptions{
-		ReplyMarkup: s.renderInlineKeyboard(buttons),
+		ReplyMarkup: &tb.ReplyMarkup{
+			InlineKeyboard: buttons,
+		},
 	}, tb.ModeMarkdown)
 }
 
 func (s *botService) sendAddTerritoryInstruction(c tb.Context) error {
 	return c.Send(MessageAddTerritoryInstruction, &tb.SendOptions{}, tb.ModeMarkdown)
+}
+
+func (s *botService) handleApprovePublisherJoinRequest(c tb.Context, b *tb.Bot, admin *entity.User, publisherID string) error {
+	logger := s.logger.
+		Named("handleApprovePublisherJoinRequest").
+		With(c).
+		With("publisherID", publisherID)
+
+	publisher, err := s.storages.User.GetUser(&GetUserFilter{
+		ID: publisherID,
+	})
+	if err != nil {
+		logger.Error("failed to get publisher", "err", err)
+		return err
+	}
+	if publisher == nil {
+		logger.Info("publisher not found")
+		return c.Send(MessagePublisherNotFound)
+	}
+
+	publisher.CongregationID = admin.CongregationID
+	publisher.Stage = entity.UserStageSelectActionFromMenu
+
+	_, err = s.storages.User.UpdateUser(publisher)
+	if err != nil {
+		logger.Error("failed to update publisher", "err", err)
+		return err
+	}
+
+	_, err = b.Send(&recepient{chatID: publisher.MessengerChatID}, MessageCongregationJoinRequestApproved)
+	if err != nil {
+		logger.Error("failed to send message to publisher", "err", err)
+		return err
+	}
+
+	messageID := c.Callback().Message.ID
+	_, err = b.Edit(&editable{
+		chatID:    c.Callback().Message.Chat.ID,
+		messageID: fmt.Sprintf("%d", messageID),
+	}, MessageCongregationJoinRequestApprovedDone(publisher.FullName))
+	if err != nil {
+		logger.Error("failed to edit message", "err", err)
+		return err
+	}
+
+	return nil
+}
+
+func (s *botService) handleRejectPublisherJoinRequest(c tb.Context, b *tb.Bot, admin *entity.User, publisherID string) error {
+	logger := s.logger.
+		Named("handleRejectPublisherJoinRequest").
+		With(c).
+		With("publisherID", publisherID)
+
+	publisher, err := s.storages.User.GetUser(&GetUserFilter{
+		ID: publisherID,
+	})
+	if err != nil {
+		logger.Error("failed to get publisher", "err", err)
+		return err
+	}
+	if publisher == nil {
+		logger.Info("publisher not found")
+		return c.Send(MessagePublisherNotFound)
+	}
+
+	publisher.Stage = entity.UserPublisherStageCongregationJoinRequestRejected
+
+	_, err = s.storages.User.UpdateUser(publisher)
+	if err != nil {
+		logger.Error("failed to update publisher", "err", err)
+		return err
+	}
+
+	_, err = b.Send(&recepient{chatID: publisher.MessengerChatID}, MessageCongregationJoinRequestRejected)
+	if err != nil {
+		logger.Error("failed to send message to publisher", "err", err)
+		return err
+	}
+
+	messageID := c.Callback().Message.ID
+	_, err = b.Edit(&editable{
+		chatID:    c.Callback().Message.Chat.ID,
+		messageID: fmt.Sprintf("%d", messageID),
+	}, MessageCongregationJoinRequestRejectedDone(publisher.FullName))
+	if err != nil {
+		logger.Error("failed to edit message", "err", err)
+		return err
+	}
+
+	return nil
+}
+
+type editable struct {
+	chatID    int64
+	messageID string
+}
+
+func (e *editable) MessageSig() (string, int64) {
+	return e.messageID, e.chatID
+}
+
+func (s *botService) handleViewTerritoriesList(c tb.Context, user *entity.User, groupName string) error {
+	logger := s.logger.
+		Named("handleViewTerritoriesList").
+		With(c)
+
+	// FIXME: we should not use create method
+	group, err := s.storages.Congregation.GetOrCreateCongregationTerritoryGroup(&GetOrCreateCongregationTerritoryGroupOptions{
+		CongregationID: user.CongregationID,
+		Title:          groupName,
+	})
+	if err != nil {
+		logger.Error("failed to get or create territory group", "err", err)
+		return err
+	}
+
+	territories, err := s.storages.Congregation.ListTerritories(&ListTerritoriesFilter{
+		CongregationID: user.CongregationID,
+		GroupID:        group.ID,
+	})
+	if err != nil {
+		logger.Error("failed to list territories", "err", err)
+		return err
+	}
+
+	for _, territory := range territories {
+		photo := tb.Photo{
+			File: tb.File{
+				FileID: territory.FileID,
+			},
+			Caption: territory.Title,
+		}
+
+		// Create inline button
+		button := tb.InlineButton{
+			Unique: territory.ID + takeTerritoryButtonUnique,
+			Text:   fmt.Sprintf("Взяти %s", territory.Title),
+		}
+
+		keyboard := [][]tb.InlineButton{{button}}
+		markup := &tb.ReplyMarkup{InlineKeyboard: keyboard}
+
+		err := c.Send(&photo, &tb.SendOptions{
+			ReplyMarkup: markup,
+		}, tb.ModeMarkdown)
+		if err != nil {
+			logger.Error("failed to send photo", "err", err)
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *botService) handleTakeTerritoryRequest(c tb.Context, b *tb.Bot, user *entity.User, territoryID string) error {
+	logger := s.logger.
+		Named("handleTakeTerritoryRequest").
+		With(c)
+
+	territory, err := s.storages.Congregation.GetTerritory(&GetTerritoryFilter{
+		ID: territoryID,
+	})
+	if err != nil {
+		logger.Error("failed to get territory", "err", err)
+		return err
+	}
+	if territory == nil {
+		logger.Info("territory not found")
+		return c.Send(MessageTerritoryNotFound)
+	}
+	if !*territory.IsAvailable {
+		logger.Info("territory is not available")
+		return c.Send(MessageTerritoryNotAvailable)
+	}
+
+	admin, err := s.storages.User.GetUser(&GetUserFilter{
+		CongregationID: user.CongregationID,
+		Role:           entity.UserRoleAdmin,
+	})
+	if err != nil {
+		logger.Error("failed to get admin user by congregation id", "err", err)
+		return err
+	}
+	if admin == nil {
+		logger.Info("admin user not found")
+		return c.Send(MessageCongregationAdminNotFound)
+	}
+
+	message := MessageTakeTerritoryRequest(user, territory.Title)
+	_, err = b.Send(&recepient{chatID: admin.MessengerChatID}, message, &tb.ReplyMarkup{
+		InlineKeyboard: [][]tb.InlineButton{
+			{
+				tb.InlineButton{
+					Unique: entity.ApproveTakeTerritoryButton,
+					Text:   entity.ApproveTakeTerritoryButton,
+				},
+				tb.InlineButton{
+					Unique: entity.RejectTakeTerritoryButton,
+					Text:   entity.RejectTakeTerritoryButton,
+				},
+			},
+		},
+	})
+	if err != nil {
+		logger.Error("failed to send message to admin", "err", err)
+		return err
+	}
+
+	return c.Send(MessageTakeTerritoryRequestSent)
+}
+
+func (s *botService) handleApproveTerritoryTake(c tb.Context, b *tb.Bot, user *entity.User, publisherID string, territoryID string) error {
+	logger := s.logger.
+		Named("handleApproveTerritoryTake").
+		With(c)
+
+	// FIXME: now we pass user as admin, but we should pass publisher user
+
+	publisher, err := s.storages.User.GetUser(&GetUserFilter{
+		ID: publisherID,
+	})
+	if err != nil {
+		logger.Error("failed to get publisher user", "err", err)
+		return err
+	}
+	if publisher == nil {
+		logger.Info("publisher user not found")
+		return c.Send(MessagePublisherNotFound)
+	}
+
+	territory, err := s.storages.Congregation.GetTerritory(&GetTerritoryFilter{
+		ID: territoryID,
+	})
+	if err != nil {
+		logger.Error("failed to get territory", "err", err)
+		return err
+	}
+	if territory == nil {
+		logger.Info("territory not found")
+		return c.Send(MessageTerritoryNotFound)
+	}
+
+	notAvailable := false
+	territory.IsAvailable = &notAvailable
+	territory.InUseByUserID = &publisherID
+	territory, err = s.storages.Congregation.UpdateTerritory(territory)
+	if err != nil {
+		logger.Error("failed to update territory", "err", err)
+		return err
+	}
+
+	message := MessageTakeTerritoryRequestApproved(territory.Title)
+	// TODO: test if sends message to publisher
+	err = c.Send(&recepient{chatID: publisher.MessengerChatID}, message)
+	if err != nil {
+		logger.Error("failed to send message to user", "err", err)
+		return err
+	}
+
+	admin, err := s.storages.User.GetUser(&GetUserFilter{
+		CongregationID: user.CongregationID,
+		Role:           entity.UserRoleAdmin,
+	})
+	if err != nil {
+		logger.Error("failed to get admin user by congregation id", "err", err)
+		return err
+	}
+	if admin == nil {
+		logger.Info("admin user not found")
+		return c.Send(MessageCongregationAdminNotFound)
+	}
+
+	// TODO: update message with buttons approve/reject to change it to ✅ so admin can see who he approved already
+	return c.Send("Temp message")
 }
 
 func (s *botService) HandleImageUpload(c tb.Context) error {
@@ -399,7 +721,7 @@ func (s *botService) HandleImageUpload(c tb.Context) error {
 	groupName := split[0]                // Klevan
 	territoryName := split[1]            // 123-а
 
-	group, err := s.storages.Congregation.GetOrCreateCongregationTerritoryGroup(&CreateOrGetCongregationTerritoryGroupOptions{
+	group, err := s.storages.Congregation.GetOrCreateCongregationTerritoryGroup(&GetOrCreateCongregationTerritoryGroupOptions{
 		CongregationID: congregation.ID,
 		Title:          groupName,
 	})
@@ -439,8 +761,3 @@ func (s *botService) HandleImageUpload(c tb.Context) error {
 	logger.Info("successfully handled image upload")
 	return c.Send(fmt.Sprintf("Територія %s успішно додана в групу %s!", territoryName, groupName), &tb.SendOptions{}, tb.ModeMarkdown)
 }
-
-// NOTE HOWTO: send files
-// c.Send(&tb.Photo{File: tb.File{
-// 	FileID: c.Message().Photo.FileID,
-// }})
