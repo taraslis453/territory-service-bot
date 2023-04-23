@@ -56,7 +56,7 @@ var (
 		return message
 	}
 	MessageCongregationJoinRequestApprovedDone = func(fullName string) string {
-		return fmt.Sprintf("Користувача *%s* приєднано до збору ✅", fullName)
+		return fmt.Sprintf("Вісника *%s* приєднано до збору ✅", fullName)
 	}
 	MessageCongregationJoinRequestRejectedDone = func(fullName string) string {
 		return fmt.Sprintf("Користувача *%s* відхилено ❌", fullName)
@@ -80,6 +80,13 @@ var (
 	MessageTakeTerritoryRequestApproved = func(territoryTitle string) string {
 		return fmt.Sprintf("Запит на взяття території %s прийнято ✅", territoryTitle)
 	}
+	MessageTakeTerritoryRequestApprovedDone = func(fullName string, territoryName string) string {
+		return fmt.Sprintf("Вісника *%s* призначено на територію *%s* ✅", fullName, territoryName)
+	}
+	MessageTakeTerritoryRequestRejected = func(fullName string, territoryTitle string) string {
+		return fmt.Sprintf("Запит на взяття території *%s* від *%s* відхилено ❌", territoryTitle, fullName)
+	}
+
 	MessagePublisherNotFound = "Вісника не знайдено 🤷"
 )
 
