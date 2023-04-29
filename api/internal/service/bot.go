@@ -240,9 +240,9 @@ func (s *botService) RenderMenu(c tb.Context) error {
 		{tb.InlineButton{Unique: entity.ViewMyTerritoryListButton, Text: entity.ViewMyTerritoryListButton}},
 	}
 	if user.Role == entity.UserRoleAdmin {
-		buttons = [][]tb.InlineButton{
-			{tb.InlineButton{Unique: entity.AddTerritoryButton, Text: entity.AddTerritoryButton}},
-		}
+		buttons = append(buttons, []tb.InlineButton{
+			{Unique: entity.AddTerritoryButton, Text: entity.AddTerritoryButton},
+		})
 	}
 	logger = logger.With("buttons", buttons)
 	logger.Info("successfully rendered menu buttons")
@@ -719,6 +719,7 @@ func (s *botService) handleViewTerritoriesList(c tb.Context, user *entity.User, 
 	territories, err := s.storages.Congregation.ListTerritories(&ListTerritoriesFilter{
 		CongregationID: user.CongregationID,
 		GroupID:        group.ID,
+		SortBy:         "last_taken_at asc",
 	})
 	if err != nil {
 		logger.Error("failed to list territories", "err", err)
@@ -853,7 +854,7 @@ func (s *botService) handleApproveTerritoryTakeRequest(c tb.Context, b *tb.Bot, 
 	}
 
 	message := MessageTakeTerritoryRequestApproved(territory.Title, notes)
-	_, err = b.Send(&recepient{chatID: publisher.MessengerChatID}, message)
+	_, err = b.Send(&recepient{chatID: publisher.MessengerChatID}, message, tb.ModeMarkdown)
 	if err != nil {
 		logger.Error("failed to send message to user", "err", err)
 		return err

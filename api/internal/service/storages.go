@@ -53,6 +53,7 @@ type ListTerritoriesFilter struct {
 	GroupID        string
 	Available      *bool
 	InUseByUserID  string
+	SortBy         string
 }
 
 type ListTerritoryGroupsFilter struct {

@@ -132,6 +132,9 @@ func (r *congregationStorage) ListTerritories(filter *service.ListTerritoriesFil
 	if filter.Available != nil {
 		stmt = stmt.Where(&entity.CongregationTerritory{IsAvailable: filter.Available})
 	}
+	if filter.SortBy != "" {
+		stmt = stmt.Order(filter.SortBy)
+	}
 
 	var territories []entity.CongregationTerritory
 	err := stmt.
