@@ -34,6 +34,7 @@ const takeTerritoryButtonUnique = "-tt"
 const returnTerritoryButtonUnique = "-rt"
 const approveTerritoryTakeButtonUnique = "-att"
 const rejectTerritoryTakeButtonUnique = "-rtt"
+const leaveTerritoryNoteButtonUnique = "-ltn"
 
 func (s *botService) HandleStart(c tb.Context) error {
 	logger := s.logger.
@@ -116,6 +117,9 @@ func (s *botService) HandleMessage(c tb.Context, b *tb.Bot) error {
 		return c.Send(MessageWaitingForAdminApproval)
 	case entity.UserAdminStageSendTerritory:
 		return s.sendAddTerritoryInstruction(c)
+	case entity.UserStageLeaveTerritoryNote:
+		territoryID := strings.Replace(c.Message().ReplyTo.Entities[0].URL, "tg://btn/", "", -1)
+		return s.handleLeaveTerritoryNoteMessage(c, user, territoryID, c.Message().Text)
 	default:
 		return s.RenderMenu(c)
 	}
@@ -284,6 +288,9 @@ func (s *botService) HandleButton(c tb.Context, b *tb.Bot) error {
 		return s.handleViewTerritoryGroupList(c, user)
 	case data == entity.ViewMyTerritoryListButton:
 		return s.handleViewMyTerritoryList(c, user)
+	case strings.Contains(data, leaveTerritoryNoteButtonUnique):
+		territoryID := strings.Replace(data, leaveTerritoryNoteButtonUnique, "", -1)
+		return s.handleLeaveTerritoryNoteRequest(c, user, territoryID)
 	case strings.Contains(data, returnTerritoryButtonUnique):
 		territoryID := strings.Replace(data, returnTerritoryButtonUnique, "", -1)
 		return s.handleReturnTerritoryRequest(c, b, user, territoryID)
@@ -420,7 +427,11 @@ func (s *botService) handleViewMyTerritoryList(c tb.Context, user *entity.User) 
 	}
 
 	for _, territory := range territories {
-		caption := fmt.Sprintf("Територія: %s\n%s", territory.Title, territory.LastTakenAt.Format("02.01.2006"))
+		var notes []string
+		for _, note := range territory.Notes {
+			notes = append(notes, note.Text)
+		}
+		caption := MessageTerritoryCaption(territory.Title, territory.LastTakenAt, notes)
 		err := c.Send(&tb.Photo{File: tb.File{
 			FileID: territory.FileID,
 		}, Caption: caption}, &tb.SendOptions{
@@ -428,8 +439,14 @@ func (s *botService) handleViewMyTerritoryList(c tb.Context, user *entity.User) 
 				InlineKeyboard: [][]tb.InlineButton{
 					{
 						{
+							Unique: territory.ID + leaveTerritoryNoteButtonUnique,
+							Text:   entity.LeaveTerritoryNoteButton,
+						},
+					},
+					{
+						{
 							Unique: territory.ID + returnTerritoryButtonUnique,
-							Text:   "Здати",
+							Text:   entity.ReturnTerritoryButton,
 						},
 					},
 				},
@@ -444,8 +461,80 @@ func (s *botService) handleViewMyTerritoryList(c tb.Context, user *entity.User) 
 	return nil
 }
 
+// When user took territory he should see notes
+// Admins should see notes for all territories
+
 func (s *botService) sendAddTerritoryInstruction(c tb.Context) error {
 	return c.Send(MessageAddTerritoryInstruction, &tb.SendOptions{}, tb.ModeMarkdown)
+}
+
+func (s *botService) handleLeaveTerritoryNoteRequest(c tb.Context, user *entity.User, territoryID string) error {
+	logger := s.logger.
+		Named("handleLeaveTerritoryNoteRequest").
+		With("territoryID", territoryID)
+
+	territory, err := s.storages.Congregation.GetTerritory(&GetTerritoryFilter{
+		ID: territoryID,
+	})
+	if err != nil {
+		logger.Error("failed to get territory", "err", err)
+		return err
+	}
+	if territory == nil {
+		logger.Info("territory not found")
+		return c.Send(MessageTerritoryNotFound)
+	}
+
+	user.Stage = entity.UserStageLeaveTerritoryNote
+	_, err = s.storages.User.UpdateUser(user)
+	if err != nil {
+		logger.Error("failed to update user", "err", err)
+		return err
+	}
+
+	message := fmt.Sprintf("<a href=\"tg://btn/%s\">\u200b</a> %s", territory.ID, MessageLeaveTerritoryNote(territory.Title))
+	return c.Send(message, &tb.SendOptions{
+		ReplyMarkup: &tb.ReplyMarkup{
+			ForceReply: true,
+		},
+	}, tb.ModeHTML)
+}
+
+func (s *botService) handleLeaveTerritoryNoteMessage(c tb.Context, user *entity.User, territoryID, note string) error {
+	logger := s.logger.
+		Named("handleLeaveTerritoryNoteMessage").
+		With("user", user, "territoryID", territoryID, "note", note)
+
+	territory, err := s.storages.Congregation.GetTerritory(&GetTerritoryFilter{
+		ID: territoryID,
+	})
+	if err != nil {
+		logger.Error("failed to get territory", "err", err)
+		return err
+	}
+	if territory == nil {
+		logger.Info("territory not found")
+		return c.Send(MessageTerritoryNotFound)
+	}
+
+	_, err = s.storages.Congregation.AddTerritoryNote(&entity.CongregationTerritoryNote{
+		TerritoryID: territory.ID,
+		UserID:      user.ID,
+		Text:        note,
+	})
+	if err != nil {
+		logger.Error("failed to add territory note", "err", err)
+		return err
+	}
+
+	user.Stage = entity.UserStageSelectActionFromMenu
+	_, err = s.storages.User.UpdateUser(user)
+	if err != nil {
+		logger.Error("failed to update user", "err", err)
+		return err
+	}
+
+	return c.Send(MessageTerritoryNoteSaved, tb.ModeMarkdown)
 }
 
 func (s botService) handleReturnTerritoryRequest(c tb.Context, b *tb.Bot, user *entity.User, territoryID string) error {
@@ -492,7 +581,7 @@ func (s botService) handleReturnTerritoryRequest(c tb.Context, b *tb.Bot, user *
 
 		_, err = b.Send(&recepient{
 			chatID: admin.MessengerChatID,
-		}, MessagePublisherReturnedTerritory(user.FullName, territory.Title))
+		}, MessagePublisherReturnedTerritory(user.FullName, territory.Title), tb.ModeMarkdown)
 		if err != nil {
 			logger.Error("failed to send message", "err", err)
 			return err
@@ -758,7 +847,12 @@ func (s *botService) handleApproveTerritoryTakeRequest(c tb.Context, b *tb.Bot, 
 		return err
 	}
 
-	message := MessageTakeTerritoryRequestApproved(territory.Title)
+	var notes []string
+	for _, note := range territory.Notes {
+		notes = append(notes, note.Text)
+	}
+
+	message := MessageTakeTerritoryRequestApproved(territory.Title, notes)
 	_, err = b.Send(&recepient{chatID: publisher.MessengerChatID}, message)
 	if err != nil {
 		logger.Error("failed to send message to user", "err", err)

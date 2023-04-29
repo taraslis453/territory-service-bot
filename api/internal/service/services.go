@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/taraslis453/territory-service-bot/config"
 	"github.com/taraslis453/territory-service-bot/internal/entity"
@@ -73,13 +74,32 @@ var (
 	MessageTerritoryNotFound     = "Територія не знайдена 🤷"
 	MessageTerritoryNotAvailable = "Територія не доступна 🤷"
 	MessageTerritoryList         = "Список доступних територій: "
-	MessageTakeTerritoryRequest  = func(user *entity.User, territoryTitle string) string {
+	MessageTerritoryCaption      = func(title string, lastTakenAt time.Time, notes []string) string {
+		caption := fmt.Sprintf("Територія: %s\n%s", title, lastTakenAt.Format("02.01.2006"))
+		if len(notes) > 0 {
+			caption += "\n\n"
+			caption += "Нотатки:\n"
+			for _, note := range notes {
+				caption += fmt.Sprintf("📌 %s\n", note)
+			}
+		}
+		return caption
+	}
+	MessageTakeTerritoryRequest = func(user *entity.User, territoryTitle string) string {
 		return fmt.Sprintf("%s хоче взяти %s", user.FullName, territoryTitle)
 	}
 	MessageTakeTerritoryRequestSent = "Запит на взяття території відправлено. Очікуй відповідь 😌"
 
-	MessageTakeTerritoryRequestApproved = func(territoryTitle string) string {
-		return fmt.Sprintf("Запит на взяття території %s прийнято ✅", territoryTitle)
+	MessageTakeTerritoryRequestApproved = func(territoryTitle string, notes []string) string {
+		message := fmt.Sprintf("Запит на взяття території *%s* прийнято ✅", territoryTitle)
+		if len(notes) > 0 {
+			message += "\n\n"
+			message += "Нотатки:\n"
+			for _, note := range notes {
+				message += fmt.Sprintf("📌 %s\n", note)
+			}
+		}
+		return message
 	}
 	MessageTakeTerritoryRequestApprovedDone = func(fullName string, territoryName string) string {
 		return fmt.Sprintf("Вісника *%s* призначено на територію *%s* ✅", fullName, territoryName)
@@ -92,6 +112,11 @@ var (
 	MessagePublisherReturnedTerritory = func(fullName string, territoryTitle string) string {
 		return fmt.Sprintf("Вісник *%s* повернув територію *%s* ✅", fullName, territoryTitle)
 	}
+	MessageLeaveTerritoryNote = func(territoryTitle string) string {
+		return fmt.Sprintf("Залишіть нотатку для території %s ✍️", territoryTitle)
+	}
+	MessageTerritoryNoteSaved = "Нотатку збережено ✅"
+
 	MessageTerritoryReturned = "Територію повернуто ✅"
 
 	MessagePublisherNotFound = "Вісника не знайдено 🤷"

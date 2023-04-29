@@ -28,6 +28,7 @@ type CongregationStorage interface {
 	ListTerritories(filter *ListTerritoriesFilter) ([]entity.CongregationTerritory, error)
 	ListTerritoryGroups(filter *ListTerritoryGroupsFilter) ([]entity.CongregationTerritoryGroup, error)
 	UpdateTerritory(territory *entity.CongregationTerritory) (*entity.CongregationTerritory, error)
+	AddTerritoryNote(territory *entity.CongregationTerritoryNote) (*entity.CongregationTerritoryNote, error)
 }
 
 type GetCongregationFilter struct {

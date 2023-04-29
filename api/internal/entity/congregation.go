@@ -25,4 +25,13 @@ type CongregationTerritory struct {
 	InUseByUserID *string
 	// NOTE: when user takes territory, we update this field and when user returns territory, we update this field
 	LastTakenAt time.Time
+	Notes       []CongregationTerritoryNote `gorm:"foreignkey:TerritoryID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+}
+
+type CongregationTerritoryNote struct {
+	ID          string `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()"`
+	TerritoryID string `gorm:"type:uuid;index"`
+	UserID      string `gorm:"type:uuid;index"`
+	Text        string
+	CreatedAt   time.Time
 }

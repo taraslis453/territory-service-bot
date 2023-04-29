@@ -9,6 +9,7 @@ import (
 	"github.com/taraslis453/territory-service-bot/internal/service"
 	"github.com/taraslis453/territory-service-bot/pkg/database"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type congregationStorage struct {
@@ -107,6 +108,7 @@ func (r *congregationStorage) GetTerritory(filter *service.GetTerritoryFilter) (
 
 	territory := entity.CongregationTerritory{}
 	err := stmt.
+		Preload(clause.Associations).
 		Take(&territory).
 		Error
 	if err != nil {
@@ -133,6 +135,7 @@ func (r *congregationStorage) ListTerritories(filter *service.ListTerritoriesFil
 
 	var territories []entity.CongregationTerritory
 	err := stmt.
+		Preload(clause.Associations).
 		Find(&territories).
 		Error
 	if err != nil {
@@ -163,10 +166,21 @@ func (r *congregationStorage) ListTerritoryGroups(filter *service.ListTerritoryG
 }
 
 func (r *congregationStorage) UpdateTerritory(territory *entity.CongregationTerritory) (*entity.CongregationTerritory, error) {
-	err := r.Instance().Save(territory).Error
+	err := r.Instance().
+		Session(&gorm.Session{FullSaveAssociations: true}).
+		Save(territory).Error
 	if err != nil {
 		return nil, err
 	}
 
 	return territory, nil
+}
+
+func (r *congregationStorage) AddTerritoryNote(territoryNote *entity.CongregationTerritoryNote) (*entity.CongregationTerritoryNote, error) {
+	err := r.Instance().Create(territoryNote).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return territoryNote, nil
 }

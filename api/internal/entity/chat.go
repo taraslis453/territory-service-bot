@@ -8,4 +8,6 @@ const (
 	RejectPublisherButton      = "Відхилити ❌"
 	ApproveTakeTerritoryButton = "Прийняти ✅"
 	RejectTakeTerritoryButton  = "Відхилити ❌"
+	LeaveTerritoryNoteButton   = "Залишити нотатку 📝"
+	ReturnTerritoryButton      = "Повернути територію 🗺"
 )

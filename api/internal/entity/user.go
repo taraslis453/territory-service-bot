@@ -26,4 +26,5 @@ const (
 	UserPublisherStageCongregationJoinRequestRejected UserStage = "user_publisher_congregation_join_request_rejected"
 	UserStageSelectActionFromMenu                     UserStage = "user_select_action_from_menu"
 	UserAdminStageSendTerritory                       UserStage = "user_admin_send_territory"
+	UserStageLeaveTerritoryNote                       UserStage = "user_leave_territory_note"
 )
