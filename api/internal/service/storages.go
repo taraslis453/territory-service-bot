@@ -51,6 +51,7 @@ type ListTerritoriesFilter struct {
 	CongregationID string
 	GroupID        string
 	Available      *bool
+	InUseByUserID  string
 }
 
 type ListTerritoryGroupsFilter struct {

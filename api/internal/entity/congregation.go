@@ -1,5 +1,7 @@
 package entity
 
+import "time"
+
 type Congregation struct {
 	ID     string                       `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()"`
 	Name   string                       `gorm:"uniqueIndex"`
@@ -18,6 +20,9 @@ type CongregationTerritory struct {
 	Title          string `gorm:"index"`
 	GroupID        string
 	FileID         string
-	IsAvailable    *bool
-	InUseByUserID  *string
+	// TODO: can we remove this field? because we have InUseByUserID
+	IsAvailable   *bool
+	InUseByUserID *string
+	// NOTE: when user takes territory, we update this field and when user returns territory, we update this field
+	LastTakenAt time.Time
 }
