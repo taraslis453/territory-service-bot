@@ -37,8 +37,7 @@ const rejectTerritoryTakeButtonUnique = "-rtt"
 
 func (s *botService) HandleStart(c tb.Context) error {
 	logger := s.logger.
-		Named("HandleStart").
-		With(c)
+		Named("HandleStart")
 
 	user, err := s.storages.User.GetUser(&GetUserFilter{
 		MessengerUserID: fmt.Sprint(c.Sender().ID),
@@ -83,8 +82,7 @@ func (s *botService) HandleStart(c tb.Context) error {
 
 func (s *botService) HandleMessage(c tb.Context, b *tb.Bot) error {
 	logger := s.logger.
-		Named("HandleMessage").
-		With(c)
+		Named("HandleMessage")
 
 	user, err := s.storages.User.GetUser(&GetUserFilter{
 		MessengerUserID: fmt.Sprint(c.Sender().ID),
@@ -126,7 +124,6 @@ func (s *botService) HandleMessage(c tb.Context, b *tb.Bot) error {
 func (s *botService) handlePublisherFullName(c tb.Context, user *entity.User) error {
 	logger := s.logger.
 		Named("handlePublisherFullName").
-		With(c).
 		With("fullName", c.Message().Text)
 
 	user.FullName = c.Message().Text
@@ -216,8 +213,7 @@ func (r *recepient) Recipient() string {
 
 func (s *botService) RenderMenu(c tb.Context) error {
 	logger := s.logger.
-		Named("RenderMenu").
-		With(c)
+		Named("RenderMenu")
 
 	user, err := s.storages.User.GetUser(&GetUserFilter{
 		MessengerUserID: fmt.Sprint(c.Sender().ID),
@@ -256,8 +252,7 @@ func (s *botService) RenderMenu(c tb.Context) error {
 
 func (s *botService) HandleButton(c tb.Context, b *tb.Bot) error {
 	logger := s.logger.
-		Named("HandleButton").
-		With(c)
+		Named("HandleButton")
 
 	var err error
 	defer func() {
@@ -317,8 +312,7 @@ func (s *botService) HandleButton(c tb.Context, b *tb.Bot) error {
 
 func (s *botService) handleAddTerritory(c tb.Context, user *entity.User) error {
 	logger := s.logger.
-		Named("handleAddTerritory").
-		With(c)
+		Named("handleAddTerritory")
 
 	if user.Role != entity.UserRoleAdmin {
 		logger.Info("user is not admin")
@@ -337,8 +331,7 @@ func (s *botService) handleAddTerritory(c tb.Context, user *entity.User) error {
 
 func (s *botService) handleViewTerritoryGroupList(c tb.Context, user *entity.User) error {
 	logger := s.logger.
-		Named("handleViewTerritoryGroupList").
-		With(c)
+		Named("handleViewTerritoryGroupList")
 
 	var showAvailableTerritories *bool
 	if user.Role != entity.UserRoleAdmin {
@@ -411,7 +404,6 @@ func (s *botService) handleViewTerritoryGroupList(c tb.Context, user *entity.Use
 func (s *botService) handleViewMyTerritoryList(c tb.Context, user *entity.User) error {
 	logger := s.logger.
 		Named("handleViewMyTerritoryList").
-		With(c).
 		With("user", user)
 
 	territories, err := s.storages.Congregation.ListTerritories(&ListTerritoriesFilter{
@@ -459,7 +451,6 @@ func (s *botService) sendAddTerritoryInstruction(c tb.Context) error {
 func (s botService) handleReturnTerritoryRequest(c tb.Context, b *tb.Bot, user *entity.User, territoryID string) error {
 	logger := s.logger.
 		Named("handleReturnTerritoryRequest").
-		With(c).
 		With(user, "user", territoryID, territoryID)
 
 	territory, err := s.storages.Congregation.GetTerritory(&GetTerritoryFilter{
@@ -526,7 +517,6 @@ func (s botService) handleReturnTerritoryRequest(c tb.Context, b *tb.Bot, user *
 func (s *botService) handleApprovePublisherJoinRequest(c tb.Context, b *tb.Bot, admin *entity.User, publisherID string) error {
 	logger := s.logger.
 		Named("handleApprovePublisherJoinRequest").
-		With(c).
 		With("publisherID", publisherID)
 
 	publisher, err := s.storages.User.GetUser(&GetUserFilter{
@@ -573,7 +563,6 @@ func (s *botService) handleApprovePublisherJoinRequest(c tb.Context, b *tb.Bot, 
 func (s *botService) handleRejectPublisherJoinRequest(c tb.Context, b *tb.Bot, admin *entity.User, publisherID string) error {
 	logger := s.logger.
 		Named("handleRejectPublisherJoinRequest").
-		With(c).
 		With("publisherID", publisherID)
 
 	publisher, err := s.storages.User.GetUser(&GetUserFilter{
@@ -626,8 +615,7 @@ func (e *editable) MessageSig() (string, int64) {
 
 func (s *botService) handleViewTerritoriesList(c tb.Context, user *entity.User, groupName string) error {
 	logger := s.logger.
-		Named("handleViewTerritoriesList").
-		With(c)
+		Named("handleViewTerritoriesList")
 
 	// FIXME: we should not use create method
 	group, err := s.storages.Congregation.GetOrCreateCongregationTerritoryGroup(&GetOrCreateCongregationTerritoryGroupOptions{
@@ -678,8 +666,7 @@ func (s *botService) handleViewTerritoriesList(c tb.Context, user *entity.User, 
 
 func (s *botService) handleTakeTerritoryRequest(c tb.Context, b *tb.Bot, user *entity.User, territoryID string) error {
 	logger := s.logger.
-		Named("handleTakeTerritoryRequest").
-		With(c)
+		Named("handleTakeTerritoryRequest")
 
 	territory, err := s.storages.Congregation.GetTerritory(&GetTerritoryFilter{
 		ID: territoryID,
@@ -735,8 +722,7 @@ func (s *botService) handleTakeTerritoryRequest(c tb.Context, b *tb.Bot, user *e
 
 func (s *botService) handleApproveTerritoryTakeRequest(c tb.Context, b *tb.Bot, admin *entity.User, publisherID string, territoryID string) error {
 	logger := s.logger.
-		Named("handleApproveTerritoryTakeRequest").
-		With(c)
+		Named("handleApproveTerritoryTakeRequest")
 
 	publisher, err := s.storages.User.GetUser(&GetUserFilter{
 		ID: publisherID,
@@ -798,8 +784,7 @@ func (s *botService) handleRejectTerritoryTakeRequest(c tb.Context, b *tb.Bot, a
 
 func (s *botService) HandleImageUpload(c tb.Context) error {
 	logger := s.logger.
-		Named("HandleImageUpload").
-		With(c)
+		Named("HandleImageUpload")
 
 	user, err := s.storages.User.GetUser(&GetUserFilter{
 		MessengerUserID: fmt.Sprint(c.Sender().ID),
