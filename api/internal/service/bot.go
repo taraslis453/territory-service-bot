@@ -108,6 +108,15 @@ func (s *botService) HandleMessage(c tb.Context, b *tb.Bot) error {
 	}
 	logger.Info("user found")
 
+	switch c.Message().Text {
+	case entity.ViewTerritoryListButton:
+		return s.handleViewTerritoryGroupList(c, user)
+	case entity.ViewMyTerritoryListButton:
+		return s.handleViewMyTerritoryList(c, user)
+	case entity.AddTerritoryButton:
+		return s.handleAddTerritory(c, user)
+	}
+
 	switch user.Stage {
 	case entity.UserPublisherStageEnterFullName:
 		return s.handlePublisherFullName(c, user)
@@ -235,26 +244,29 @@ func (s *botService) RenderMenu(c tb.Context) error {
 		return c.Send(MessageEnterCongregationName)
 	}
 
-	buttons := [][]tb.InlineButton{
-		{tb.InlineButton{Unique: entity.ViewTerritoryListButton, Text: entity.ViewTerritoryListButton}},
-		{tb.InlineButton{Unique: entity.ViewMyTerritoryListButton, Text: entity.ViewMyTerritoryListButton}},
+	buttons := [][]tb.ReplyButton{
+		{tb.ReplyButton{Text: entity.ViewTerritoryListButton}},
+		{tb.ReplyButton{Text: entity.ViewMyTerritoryListButton}},
 	}
 	if user.Role == entity.UserRoleAdmin {
-		buttons = append(buttons, []tb.InlineButton{
-			{Unique: entity.AddTerritoryButton, Text: entity.AddTerritoryButton},
+		buttons = append(buttons, []tb.ReplyButton{
+			{Text: entity.AddTerritoryButton},
 		})
 	}
 	logger = logger.With("buttons", buttons)
 	logger.Info("successfully rendered menu buttons")
 
-	return c.Send(MessageHowCanIHelpYou, &tb.SendOptions{
-		ReplyMarkup: &tb.ReplyMarkup{
-			InlineKeyboard: buttons,
+	return c.Send(
+		MessageHowCanIHelpYou,
+		&tb.SendOptions{
+			ReplyMarkup: &tb.ReplyMarkup{
+				ReplyKeyboard: buttons,
+			},
 		},
-	})
+	)
 }
 
-func (s *botService) HandleButton(c tb.Context, b *tb.Bot) error {
+func (s *botService) HandleInlineButton(c tb.Context, b *tb.Bot) error {
 	logger := s.logger.
 		Named("HandleButton")
 
@@ -282,12 +294,6 @@ func (s *botService) HandleButton(c tb.Context, b *tb.Bot) error {
 	data = strings.Replace(data, "\f", "", -1)
 
 	switch {
-	case data == entity.AddTerritoryButton:
-		return s.handleAddTerritory(c, user)
-	case data == entity.ViewTerritoryListButton:
-		return s.handleViewTerritoryGroupList(c, user)
-	case data == entity.ViewMyTerritoryListButton:
-		return s.handleViewMyTerritoryList(c, user)
 	case strings.Contains(data, approvePublisherJoinRequestButtonUnique):
 		publisherID := strings.Replace(c.Message().Entities[0].URL, "tg://btn/", "", -1)
 		return s.handleApprovePublisherJoinRequest(c, b, user, publisherID)
@@ -515,6 +521,15 @@ func (s *botService) handleLeaveTerritoryNoteMessage(c tb.Context, user *entity.
 	if territory == nil {
 		logger.Info("territory not found")
 		return c.Send(MessageTerritoryNotFound)
+	}
+
+	if territory.InUseByUserID == nil {
+		logger.Info("territory not in use")
+		return c.Send(MessageTerritoryNotInUse)
+	}
+	if *territory.InUseByUserID != user.ID {
+		logger.Info("territory not in use by user")
+		return c.Send(MessageTerritoryCannotLeaveNote)
 	}
 
 	_, err = s.storages.Congregation.AddTerritoryNote(&entity.CongregationTerritoryNote{

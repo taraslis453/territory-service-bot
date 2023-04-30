@@ -33,7 +33,7 @@ type BotService interface {
 	HandleStart(c tb.Context) error
 	HandleMessage(c tb.Context, b *tb.Bot) error
 	RenderMenu(c tb.Context) error
-	HandleButton(c tb.Context, b *tb.Bot) error
+	HandleInlineButton(c tb.Context, b *tb.Bot) error
 	HandleImageUpload(c tb.Context) error
 }
 
@@ -140,7 +140,9 @@ var (
 	MessageLeaveTerritoryNote = func(territoryTitle string) string {
 		return fmt.Sprintf("Залишіть нотатку для території %s ✍️", territoryTitle)
 	}
-	MessageTerritoryNoteSaved = "Нотатку збережено ✅"
+	MessageTerritoryNotInUse        = "Територія не використовується 🤷"
+	MessageTerritoryCannotLeaveNote = "Ви не можете залишити нотатку для цієї території 🤷"
+	MessageTerritoryNoteSaved       = "Нотатку збережено ✅"
 
 	MessageTerritoryReturned = "Територію повернуто ✅"
 
