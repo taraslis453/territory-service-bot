@@ -288,12 +288,6 @@ func (s *botService) HandleButton(c tb.Context, b *tb.Bot) error {
 		return s.handleViewTerritoryGroupList(c, user)
 	case data == entity.ViewMyTerritoryListButton:
 		return s.handleViewMyTerritoryList(c, user)
-	case strings.Contains(data, leaveTerritoryNoteButtonUnique):
-		territoryID := strings.Replace(data, leaveTerritoryNoteButtonUnique, "", -1)
-		return s.handleLeaveTerritoryNoteRequest(c, user, territoryID)
-	case strings.Contains(data, returnTerritoryButtonUnique):
-		territoryID := strings.Replace(data, returnTerritoryButtonUnique, "", -1)
-		return s.handleReturnTerritoryRequest(c, b, user, territoryID)
 	case strings.Contains(data, approvePublisherJoinRequestButtonUnique):
 		publisherID := strings.Replace(c.Message().Entities[0].URL, "tg://btn/", "", -1)
 		return s.handleApprovePublisherJoinRequest(c, b, user, publisherID)
@@ -307,11 +301,17 @@ func (s *botService) HandleButton(c tb.Context, b *tb.Bot) error {
 		territoryID := strings.Replace(data, takeTerritoryButtonUnique, "", -1)
 		return s.handleTakeTerritoryRequest(c, b, user, territoryID)
 	case strings.Contains(data, approveTerritoryTakeButtonUnique):
-		parts := strings.Split(strings.TrimPrefix(c.Message().Entities[0].URL, "tg://btn/"), "/")
+		parts := strings.Split(strings.TrimPrefix(c.Message().CaptionEntities[0].URL, "tg://btn/"), "/")
 		return s.handleApproveTerritoryTakeRequest(c, b, user, parts[0], parts[1])
 	case strings.Contains(data, rejectTerritoryTakeButtonUnique):
-		parts := strings.Split(strings.TrimPrefix(c.Message().Entities[0].URL, "tg://btn/"), "/")
+		parts := strings.Split(strings.TrimPrefix(c.Message().CaptionEntities[0].URL, "tg://btn/"), "/")
 		return s.handleRejectTerritoryTakeRequest(c, b, user, parts[0], parts[1])
+	case strings.Contains(data, leaveTerritoryNoteButtonUnique):
+		territoryID := strings.Replace(data, leaveTerritoryNoteButtonUnique, "", -1)
+		return s.handleLeaveTerritoryNoteRequest(c, user, territoryID)
+	case strings.Contains(data, returnTerritoryButtonUnique):
+		territoryID := strings.Replace(data, returnTerritoryButtonUnique, "", -1)
+		return s.handleReturnTerritoryRequest(c, b, user, territoryID)
 	default:
 		return fmt.Errorf("unknown button: %s", data)
 	}
@@ -431,7 +431,7 @@ func (s *botService) handleViewMyTerritoryList(c tb.Context, user *entity.User) 
 		for _, note := range territory.Notes {
 			notes = append(notes, note.Text)
 		}
-		caption := MessageTerritoryCaption(territory.Title, territory.LastTakenAt, notes)
+		caption := MessageMyTerritoryListTerritoryCaption(territory.Title, territory.LastTakenAt, notes)
 		err := c.Send(&tb.Photo{File: tb.File{
 			FileID: territory.FileID,
 		}, Caption: caption}, &tb.SendOptions{
@@ -640,7 +640,7 @@ func (s *botService) handleApprovePublisherJoinRequest(c tb.Context, b *tb.Bot, 
 	_, err = b.Edit(&editable{
 		chatID:    c.Callback().Message.Chat.ID,
 		messageID: fmt.Sprintf("%d", messageID),
-	}, MessageCongregationJoinRequestApprovedDone(publisher.FullName))
+	}, MessageCongregationJoinRequestApprovedDone(publisher.FullName), tb.ModeMarkdown)
 	if err != nil {
 		logger.Error("failed to edit message", "err", err)
 		return err
@@ -674,7 +674,7 @@ func (s *botService) handleRejectPublisherJoinRequest(c tb.Context, b *tb.Bot, a
 		return err
 	}
 
-	_, err = b.Send(&recepient{chatID: publisher.MessengerChatID}, MessageCongregationJoinRequestRejected)
+	_, err = b.Send(&recepient{chatID: publisher.MessengerChatID}, MessageCongregationJoinRequestRejected, tb.ModeMarkdown)
 	if err != nil {
 		logger.Error("failed to send message to publisher", "err", err)
 		return err
@@ -716,35 +716,71 @@ func (s *botService) handleViewTerritoriesList(c tb.Context, user *entity.User, 
 		return err
 	}
 
-	territories, err := s.storages.Congregation.ListTerritories(&ListTerritoriesFilter{
+	listTerritoriesFilter := &ListTerritoriesFilter{
 		CongregationID: user.CongregationID,
 		GroupID:        group.ID,
 		SortBy:         "last_taken_at asc",
-	})
+	}
+
+	if user.Role == entity.UserRolePublisher {
+		listTerritoriesFilter.Available = &[]bool{true}[0]
+	}
+
+	territories, err := s.storages.Congregation.ListTerritories(listTerritoriesFilter)
 	if err != nil {
 		logger.Error("failed to list territories", "err", err)
 		return err
 	}
 
+	var sendOptions tb.SendOptions
 	for _, territory := range territories {
 		photo := tb.Photo{
 			File: tb.File{
 				FileID: territory.FileID,
 			},
-			Caption: fmt.Sprintf("*%s*\n\n*Останнє опрацювання:* %s", territory.Title, territory.LastTakenAt.Format("02.01.2006")),
 		}
 
-		button := tb.InlineButton{
-			Unique: territory.ID + takeTerritoryButtonUnique,
-			Text:   fmt.Sprintf("Взяти %s", territory.Title),
+		var inUseByFullName string
+		if territory.InUseByUserID != nil {
+
+			publisher, err := s.storages.User.GetUser(&GetUserFilter{
+				ID: *territory.InUseByUserID,
+			})
+			if err != nil {
+				logger.Error("failed to get publisher", "err", err)
+				return err
+			}
+			if publisher != nil {
+				inUseByFullName = publisher.FullName
+			}
 		}
 
-		keyboard := [][]tb.InlineButton{{button}}
-		markup := &tb.ReplyMarkup{InlineKeyboard: keyboard}
+		var notes []string
+		if len(territory.Notes) > 0 {
+			for _, note := range territory.Notes {
+				notes = append(notes, note.Text)
+			}
+		}
 
-		err := c.Send(&photo, &tb.SendOptions{
-			ReplyMarkup: markup,
-		}, tb.ModeMarkdown)
+		photo.Caption = MessageTerritoryListTerritoryCaption(MessageTerritoryListTerritoryCaptionOptions{
+			UserRole:        user.Role,
+			Title:           territory.Title,
+			LastTakenAt:     territory.LastTakenAt,
+			Notes:           notes,
+			InUseByFullName: inUseByFullName,
+		})
+
+		if territory.InUseByUserID == nil {
+			button := tb.InlineButton{
+				Unique: territory.ID + takeTerritoryButtonUnique,
+				Text:   fmt.Sprintf("%s %s", entity.TakeTerritoryButton, territory.Title),
+			}
+
+			keyboard := [][]tb.InlineButton{{button}}
+			markup := &tb.ReplyMarkup{InlineKeyboard: keyboard}
+			sendOptions.ReplyMarkup = markup
+		}
+		err := c.Send(&photo, &sendOptions, tb.ModeMarkdown)
 		if err != nil {
 			logger.Error("failed to send photo", "err", err)
 			return err
@@ -788,26 +824,43 @@ func (s *botService) handleTakeTerritoryRequest(c tb.Context, b *tb.Bot, user *e
 	}
 
 	message := fmt.Sprintf("<a href=\"tg://btn/%s/%s\">\u200b</a> %s", user.ID, territoryID, MessageTakeTerritoryRequest(user, territory.Title))
-	_, err = b.Send(&recepient{chatID: admin.MessengerChatID}, message, &tb.ReplyMarkup{
-		InlineKeyboard: [][]tb.InlineButton{
-			{
-				tb.InlineButton{
-					Unique: approveTerritoryTakeButtonUnique,
-					Text:   entity.ApproveTakeTerritoryButton,
-				},
-				tb.InlineButton{
-					Unique: rejectTerritoryTakeButtonUnique,
-					Text:   entity.RejectTakeTerritoryButton,
+	_, err = b.Send(&recepient{chatID: admin.MessengerChatID},
+		&tb.Photo{
+			File: tb.File{
+				FileID: territory.FileID,
+			},
+			Caption: message,
+		},
+		&tb.ReplyMarkup{
+			InlineKeyboard: [][]tb.InlineButton{
+				{
+					tb.InlineButton{
+						Unique: approveTerritoryTakeButtonUnique,
+						Text:   entity.ApproveTakeTerritoryButton,
+					},
+					tb.InlineButton{
+						Unique: rejectTerritoryTakeButtonUnique,
+						Text:   entity.RejectTakeTerritoryButton,
+					},
 				},
 			},
-		},
-	}, tb.ModeHTML)
+		}, tb.ModeHTML)
 	if err != nil {
 		logger.Error("failed to send message to admin", "err", err)
 		return err
 	}
 
-	return c.Send(MessageTakeTerritoryRequestSent)
+	messageID := c.Callback().Message.ID
+	_, err = b.EditCaption(&editable{
+		chatID:    c.Callback().Message.Chat.ID,
+		messageID: fmt.Sprintf("%d", messageID),
+	}, MessageTakeTerritoryRequestSent, tb.ModeMarkdown)
+	if err != nil {
+		logger.Error("failed to edit message", "err", err)
+		return err
+	}
+
+	return nil
 }
 
 func (s *botService) handleApproveTerritoryTakeRequest(c tb.Context, b *tb.Bot, admin *entity.User, publisherID string, territoryID string) error {
@@ -861,7 +914,7 @@ func (s *botService) handleApproveTerritoryTakeRequest(c tb.Context, b *tb.Bot, 
 	}
 
 	messageID := c.Callback().Message.ID
-	_, err = b.Edit(&editable{
+	_, err = b.EditCaption(&editable{
 		chatID:    c.Callback().Message.Chat.ID,
 		messageID: fmt.Sprintf("%d", messageID),
 	}, MessageTakeTerritoryRequestApprovedDone(publisher.FullName, territory.Title), tb.ModeMarkdown)
@@ -874,6 +927,51 @@ func (s *botService) handleApproveTerritoryTakeRequest(c tb.Context, b *tb.Bot, 
 }
 
 func (s *botService) handleRejectTerritoryTakeRequest(c tb.Context, b *tb.Bot, admin *entity.User, publisherID string, territoryID string) error {
+	logger := s.logger.
+		Named("handleRejectTerritoryTakeRequest").
+		With("admin", admin, "publisherID", publisherID, "territoryID", territoryID)
+
+	publisher, err := s.storages.User.GetUser(&GetUserFilter{
+		ID: publisherID,
+	})
+	if err != nil {
+		logger.Error("failed to get publisher user", "err", err)
+		return err
+	}
+	if publisher == nil {
+		logger.Info("publisher user not found")
+		return c.Send(MessagePublisherNotFound)
+	}
+
+	territory, err := s.storages.Congregation.GetTerritory(&GetTerritoryFilter{
+		ID: territoryID,
+	})
+	if err != nil {
+		logger.Error("failed to get territory", "err", err)
+		return err
+	}
+	if territory == nil {
+		logger.Info("territory not found")
+		return c.Send(MessageTerritoryNotFound)
+	}
+
+	message := MessageTakeTerritoryRequestRejected(territory.Title)
+	_, err = b.Send(&recepient{chatID: publisher.MessengerChatID}, message, tb.ModeMarkdown)
+	if err != nil {
+		logger.Error("failed to send message to user", "err", err)
+		return err
+	}
+
+	messageID := c.Callback().Message.ID
+	_, err = b.EditCaption(&editable{
+		chatID:    c.Callback().Message.Chat.ID,
+		messageID: fmt.Sprintf("%d", messageID),
+	}, MessageTakeTerritoryRequestRejectedDone(publisher.FullName, territory.Title), tb.ModeMarkdown)
+	if err != nil {
+		logger.Error("failed to edit message", "err", err)
+		return err
+	}
+
 	return nil
 }
 

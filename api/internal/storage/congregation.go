@@ -135,6 +135,9 @@ func (r *congregationStorage) ListTerritories(filter *service.ListTerritoriesFil
 	if filter.SortBy != "" {
 		stmt = stmt.Order(filter.SortBy)
 	}
+	if filter.InUseByUserID != "" {
+		stmt = stmt.Where(&entity.CongregationTerritory{InUseByUserID: &filter.InUseByUserID})
+	}
 
 	var territories []entity.CongregationTerritory
 	err := stmt.

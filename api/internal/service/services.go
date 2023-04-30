@@ -70,11 +70,11 @@ var (
 	MessageTerritoryExistsInGroup  = func(title string, groupTitle string) string {
 		return fmt.Sprintf("Територія з назвою *%s* вже існує в групі *%s* 🤷", title, groupTitle)
 	}
-	MessageNoTerritoriesFound    = "Території не знайдено 🤷"
-	MessageTerritoryNotFound     = "Територія не знайдена 🤷"
-	MessageTerritoryNotAvailable = "Територія не доступна 🤷"
-	MessageTerritoryList         = "Список доступних територій: "
-	MessageTerritoryCaption      = func(title string, lastTakenAt time.Time, notes []string) string {
+	MessageNoTerritoriesFound              = "Території не знайдено 🤷"
+	MessageTerritoryNotFound               = "Територія не знайдена 🤷"
+	MessageTerritoryNotAvailable           = "Територія не доступна 🤷"
+	MessageTerritoryList                   = "Список доступних територій: "
+	MessageMyTerritoryListTerritoryCaption = func(title string, lastTakenAt time.Time, notes []string) string {
 		caption := fmt.Sprintf("Територія: %s\n%s", title, lastTakenAt.Format("02.01.2006"))
 		if len(notes) > 0 {
 			caption += "\n\n"
@@ -85,6 +85,28 @@ var (
 		}
 		return caption
 	}
+	MessageTerritoryListTerritoryCaption = func(options MessageTerritoryListTerritoryCaptionOptions) string {
+		caption := fmt.Sprintf("Територія: %s", options.Title)
+		if !options.LastTakenAt.IsZero() {
+			caption += fmt.Sprintf("\nОстаннє опрацювання: *%s*", options.LastTakenAt.Format("02.01.2006"))
+		}
+
+		if options.UserRole == entity.UserRoleAdmin {
+			if options.InUseByFullName != "" {
+				caption += fmt.Sprintf("\nВикористовує: *%s*", options.InUseByFullName)
+			}
+
+			if len(options.Notes) > 0 {
+				caption += "\n\n"
+				caption += "Нотатки:\n"
+				for _, note := range options.Notes {
+					caption += fmt.Sprintf("📌 %s\n", note)
+				}
+			}
+		}
+		return caption
+	}
+
 	MessageTakeTerritoryRequest = func(user *entity.User, territoryTitle string) string {
 		return fmt.Sprintf("%s хоче взяти %s", user.FullName, territoryTitle)
 	}
@@ -105,8 +127,11 @@ var (
 		return fmt.Sprintf("Вісника *%s* призначено на територію *%s* ✅", fullName, territoryName)
 	}
 
-	MessageTakeTerritoryRequestRejected = func(fullName string, territoryTitle string) string {
-		return fmt.Sprintf("Запит на взяття території *%s* від *%s* відхилено ❌", territoryTitle, fullName)
+	MessageTakeTerritoryRequestRejected = func(territoryTitle string) string {
+		return fmt.Sprintf("Запит на взяття території *%s* відхилено ❌", territoryTitle)
+	}
+	MessageTakeTerritoryRequestRejectedDone = func(fullName string, territoryTitle string) string {
+		return fmt.Sprintf("Вісника *%s* відхилено на територію *%s* ❌", fullName, territoryTitle)
 	}
 
 	MessagePublisherReturnedTerritory = func(fullName string, territoryTitle string) string {
@@ -126,4 +151,12 @@ type MessageNewJoinRequestOptions struct {
 	FirstName string
 	LastName  string
 	Username  string
+}
+
+type MessageTerritoryListTerritoryCaptionOptions struct {
+	UserRole        entity.UserRole
+	Title           string
+	LastTakenAt     time.Time
+	Notes           []string
+	InUseByFullName string
 }
