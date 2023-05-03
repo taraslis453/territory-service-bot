@@ -744,8 +744,8 @@ func (s *botService) handleViewTerritoriesList(c tb.Context, user *entity.User, 
 		return err
 	}
 
-	var sendOptions tb.SendOptions
 	for _, territory := range territories {
+		var sendOptions tb.SendOptions
 		photo := tb.Photo{
 			File: tb.File{
 				FileID: territory.FileID,
