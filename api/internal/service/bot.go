@@ -36,7 +36,7 @@ const approveTerritoryTakeButtonUnique = "-att"
 const rejectTerritoryTakeButtonUnique = "-rtt"
 const leaveTerritoryNoteButtonUnique = "-ltn"
 
-func (s *botService) HandleStart(c tb.Context) error {
+func (s *botService) HandleStart(c tb.Context, b *tb.Bot) error {
 	logger := s.logger.
 		Named("HandleStart")
 
@@ -78,7 +78,7 @@ func (s *botService) HandleStart(c tb.Context) error {
 		return err
 	}
 
-	return s.RenderMenu(c)
+	return s.RenderMenu(c, b)
 }
 
 func (s *botService) HandleMessage(c tb.Context, b *tb.Bot) error {
@@ -130,7 +130,7 @@ func (s *botService) HandleMessage(c tb.Context, b *tb.Bot) error {
 		territoryID := strings.Replace(c.Message().ReplyTo.Entities[0].URL, "tg://btn/", "", -1)
 		return s.handleLeaveTerritoryNoteMessage(c, user, territoryID, c.Message().Text)
 	default:
-		return s.RenderMenu(c)
+		return s.RenderMenu(c, b)
 	}
 }
 
@@ -224,7 +224,7 @@ func (r *recepient) Recipient() string {
 	return r.chatID
 }
 
-func (s *botService) RenderMenu(c tb.Context) error {
+func (s *botService) RenderMenu(c tb.Context, b *tb.Bot) error {
 	logger := s.logger.
 		Named("RenderMenu")
 
@@ -466,9 +466,6 @@ func (s *botService) handleViewMyTerritoryList(c tb.Context, user *entity.User) 
 
 	return nil
 }
-
-// When user took territory he should see notes
-// Admins should see notes for all territories
 
 func (s *botService) sendAddTerritoryInstruction(c tb.Context) error {
 	return c.Send(MessageAddTerritoryInstruction, &tb.SendOptions{}, tb.ModeMarkdown)
@@ -990,7 +987,7 @@ func (s *botService) handleRejectTerritoryTakeRequest(c tb.Context, b *tb.Bot, a
 	return nil
 }
 
-func (s *botService) HandleImageUpload(c tb.Context) error {
+func (s *botService) HandleImageUpload(c tb.Context, b *tb.Bot) error {
 	logger := s.logger.
 		Named("HandleImageUpload")
 

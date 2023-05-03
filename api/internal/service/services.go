@@ -30,11 +30,11 @@ type serviceContext struct {
 }
 
 type BotService interface {
-	HandleStart(c tb.Context) error
+	HandleStart(c tb.Context, b *tb.Bot) error
 	HandleMessage(c tb.Context, b *tb.Bot) error
-	RenderMenu(c tb.Context) error
+	RenderMenu(c tb.Context, b *tb.Bot) error
 	HandleInlineButton(c tb.Context, b *tb.Bot) error
-	HandleImageUpload(c tb.Context) error
+	HandleImageUpload(c tb.Context, b *tb.Bot) error
 }
 
 var (

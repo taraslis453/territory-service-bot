@@ -1,8 +1,11 @@
 package telegram
 
 import (
+	"bytes"
+	"runtime/debug"
 	"time"
 
+	"github.com/DataDog/gostackparse"
 	"github.com/taraslis453/territory-service-bot/config"
 	"github.com/taraslis453/territory-service-bot/internal/service"
 	"github.com/taraslis453/territory-service-bot/pkg/logging"
@@ -28,17 +31,38 @@ func NewBot(options *Options) error {
 		return err
 	}
 
-	b.Handle("/start", options.Services.Bot.HandleStart)
+	b.Handle("/start", func(c tb.Context) error {
+		return wrapHandler(c, b, options.Logger, options.Services.Bot.HandleStart)
+	})
 	b.Handle(tb.OnText, func(c tb.Context) error {
-		return options.Services.Bot.HandleMessage(c, b)
+		return wrapHandler(c, b, options.Logger, options.Services.Bot.HandleMessage)
 	})
-	b.Handle("/menu", options.Services.Bot.RenderMenu)
+	b.Handle("/menu", func(c tb.Context) error {
+		return wrapHandler(c, b, options.Logger, options.Services.Bot.RenderMenu)
+	})
 	b.Handle(tb.OnCallback, func(c tb.Context) error {
-		return options.Services.Bot.HandleInlineButton(c, b)
+		return wrapHandler(c, b, options.Logger, options.Services.Bot.HandleInlineButton)
 	})
-	b.Handle(tb.OnPhoto, options.Services.Bot.HandleImageUpload)
+	b.Handle(tb.OnPhoto, func(c tb.Context) error {
+		return wrapHandler(c, b, options.Logger, options.Services.Bot.HandleImageUpload)
+	})
 
 	b.Start()
 
 	return nil
+}
+
+func wrapHandler(c tb.Context, b *tb.Bot, logger logging.Logger, handler func(c tb.Context, b *tb.Bot) error) error {
+	defer func() {
+		if r := recover(); r != nil {
+			stacktrace, errors := gostackparse.Parse(bytes.NewReader(debug.Stack()))
+			if len(errors) > 0 || len(stacktrace) == 0 {
+				logger.Error("get stacktrace errors", "stacktraceErrors", errors, "stacktrace", "unknown", "err", r)
+			} else {
+				logger.Error("unhandled error", "err", r, "stacktrace", stacktrace)
+			}
+		}
+	}()
+
+	return handler(c, b)
 }
