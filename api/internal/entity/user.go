@@ -1,13 +1,14 @@
 package entity
 
 type User struct {
-	ID              string `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()"`
-	CongregationID  string
-	MessengerUserID string
-	MessengerChatID string
-	FullName        string
-	Role            UserRole
-	Stage           UserStage
+	ID                 string `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()"`
+	JoinCongregationID string // represents in which congeration user wants to join
+	CongregationID     string // represents in which congeration user in
+	MessengerUserID    string
+	MessengerChatID    string
+	FullName           string
+	Role               UserRole
+	Stage              UserStage
 }
 
 type UserRole string

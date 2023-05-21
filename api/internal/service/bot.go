@@ -36,6 +36,8 @@ const approveTerritoryTakeButtonUnique = "-att"
 const rejectTerritoryTakeButtonUnique = "-rtt"
 const leaveTerritoryNoteButtonUnique = "-ltn"
 
+const messengerIDContextKey = "messengerID"
+
 func (s *botService) HandleStart(c tb.Context, b *tb.Bot) error {
 	logger := s.logger.
 		Named("HandleStart")
@@ -51,9 +53,10 @@ func (s *botService) HandleStart(c tb.Context, b *tb.Bot) error {
 		logger.Info("user not found")
 
 		_, err := s.storages.User.CreateUser(&entity.User{
-			MessengerUserID: fmt.Sprint(c.Sender().ID),
-			MessengerChatID: fmt.Sprint(c.Chat().ID),
-			Stage:           entity.UserPublisherStageEnterFullName,
+			MessengerUserID:    fmt.Sprint(c.Sender().ID),
+			MessengerChatID:    fmt.Sprint(c.Chat().ID),
+			Stage:              entity.UserPublisherStageEnterFullName,
+			JoinCongregationID: c.Message().Payload,
 		})
 		if err != nil {
 			logger.Error("failed to create user", "error", err)
@@ -78,6 +81,7 @@ func (s *botService) HandleStart(c tb.Context, b *tb.Bot) error {
 		return err
 	}
 
+	c.Set(messengerIDContextKey, user.MessengerChatID)
 	return s.RenderMenu(c, b)
 }
 
@@ -119,9 +123,12 @@ func (s *botService) HandleMessage(c tb.Context, b *tb.Bot) error {
 
 	switch user.Stage {
 	case entity.UserPublisherStageEnterFullName:
-		return s.handlePublisherFullName(c, user)
+		return s.handlePublisherFullName(c, b, user)
 	case entity.UserPublisherStageEnterCongregationName:
-		return s.handleCongregationPublisherJoinRequest(c, b, user)
+		return s.handleCongregationPublisherJoinRequest(c, b, handleCongregationPublisherJoinRequestOptions{
+			User:             user,
+			CongregationName: c.Message().Text,
+		})
 	case entity.UserPublisherStageWaitingForAdminApproval:
 		return c.Send(MessageWaitingForAdminApproval)
 	case entity.UserAdminStageSendTerritory:
@@ -130,16 +137,23 @@ func (s *botService) HandleMessage(c tb.Context, b *tb.Bot) error {
 		territoryID := strings.Replace(c.Message().ReplyTo.Entities[0].URL, "tg://btn/", "", -1)
 		return s.handleLeaveTerritoryNoteMessage(c, user, territoryID, c.Message().Text)
 	default:
+		c.Set(messengerIDContextKey, user.MessengerChatID)
 		return s.RenderMenu(c, b)
 	}
 }
 
-func (s *botService) handlePublisherFullName(c tb.Context, user *entity.User) error {
+func (s *botService) handlePublisherFullName(c tb.Context, b *tb.Bot, user *entity.User) error {
 	logger := s.logger.
 		Named("handlePublisherFullName").
 		With("fullName", c.Message().Text)
 
 	user.FullName = c.Message().Text
+	if user.JoinCongregationID != "" {
+		return s.handleCongregationPublisherJoinRequest(c, b, handleCongregationPublisherJoinRequestOptions{
+			User:           user,
+			CongregationID: user.JoinCongregationID,
+		})
+	}
 	user.Stage = entity.UserPublisherStageEnterCongregationName
 	_, err := s.storages.User.UpdateUser(user)
 	if err != nil {
@@ -150,13 +164,20 @@ func (s *botService) handlePublisherFullName(c tb.Context, user *entity.User) er
 	return c.Send(MessageEnterCongregationName)
 }
 
-func (s *botService) handleCongregationPublisherJoinRequest(c tb.Context, b *tb.Bot, user *entity.User) error {
+type handleCongregationPublisherJoinRequestOptions struct {
+	User             *entity.User
+	CongregationName string
+	CongregationID   string
+}
+
+func (s *botService) handleCongregationPublisherJoinRequest(c tb.Context, b *tb.Bot, options handleCongregationPublisherJoinRequestOptions) error {
 	logger := s.logger.
 		Named("handleCongregationPublisherJoinRequest").
 		With("congregationName", c.Message().Text)
 
 	congregation, err := s.storages.Congregation.GetCongregation(&GetCongregationFilter{
-		Name: c.Message().Text,
+		Name: options.CongregationName,
+		ID:   options.CongregationID,
 	})
 	if err != nil {
 		logger.Error("failed to get congregation by name", "error", err)
@@ -182,7 +203,7 @@ func (s *botService) handleCongregationPublisherJoinRequest(c tb.Context, b *tb.
 
 	// NOTE using this because we can't pass more than 64 bytes in callback data
 	// https://github.com/nmlorg/metabot/issues/1
-	message := fmt.Sprintf("<a href=\"tg://btn/%s\">\u200b</a> %s", user.ID, MessageNewJoinRequest(&MessageNewJoinRequestOptions{
+	message := fmt.Sprintf("<a href=\"tg://btn/%s\">\u200b</a> %s", options.User.ID, MessageNewJoinRequest(&MessageNewJoinRequestOptions{
 		FirstName: c.Sender().FirstName,
 		LastName:  c.Sender().LastName,
 		Username:  c.Sender().Username,
@@ -206,8 +227,8 @@ func (s *botService) handleCongregationPublisherJoinRequest(c tb.Context, b *tb.
 		return err
 	}
 
-	user.Stage = entity.UserPublisherStageWaitingForAdminApproval
-	_, err = s.storages.User.UpdateUser(user)
+	options.User.Stage = entity.UserPublisherStageWaitingForAdminApproval
+	_, err = s.storages.User.UpdateUser(options.User)
 	if err != nil {
 		logger.Error("failed to update user", "err", err)
 		return err
@@ -228,8 +249,15 @@ func (s *botService) RenderMenu(c tb.Context, b *tb.Bot) error {
 	logger := s.logger.
 		Named("RenderMenu")
 
+	messengerID := fmt.Sprint(c.Sender().ID)
+
+	if c.Get(messengerIDContextKey) != nil {
+		messengerID = fmt.Sprint(c.Get(messengerIDContextKey))
+	}
+	logger = logger.With("messengerID", messengerID)
+
 	user, err := s.storages.User.GetUser(&GetUserFilter{
-		MessengerUserID: fmt.Sprint(c.Sender().ID),
+		MessengerUserID: messengerID,
 	})
 	if err != nil {
 		logger.Error("failed to get user by telegram id", "err", err)
@@ -256,19 +284,23 @@ func (s *botService) RenderMenu(c tb.Context, b *tb.Bot) error {
 	logger = logger.With("buttons", buttons)
 	logger.Info("successfully rendered menu buttons")
 
-	return c.Send(
-		MessageHowCanIHelpYou,
-		&tb.SendOptions{
-			ReplyMarkup: &tb.ReplyMarkup{
-				ReplyKeyboard: buttons,
-			},
+	_, err = b.Send(&recepient{chatID: messengerID}, MessageHowCanIHelpYou, &tb.SendOptions{
+		ReplyMarkup: &tb.ReplyMarkup{
+			ReplyKeyboard: buttons,
 		},
+	},
 	)
+	if err != nil {
+		logger.Error("failed to send menu", "err", err)
+		return err
+	}
+
+	return nil
 }
 
 func (s *botService) HandleInlineButton(c tb.Context, b *tb.Bot) error {
 	logger := s.logger.
-		Named("HandleButton")
+		Named("HandleInlineButton")
 
 	var err error
 	defer func() {
@@ -646,6 +678,13 @@ func (s *botService) handleApprovePublisherJoinRequest(c tb.Context, b *tb.Bot, 
 	if err != nil {
 		logger.Error("failed to send message to publisher", "err", err)
 		return err
+	}
+
+	// Render menu for publisher after approving request from admin
+	c.Set(messengerIDContextKey, publisher.MessengerUserID)
+	err = s.RenderMenu(c, b)
+	if err != nil {
+		logger.Error("failed to render menu for publisher", "err", err)
 	}
 
 	messageID := c.Callback().Message.ID
