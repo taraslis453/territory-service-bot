@@ -33,6 +33,7 @@ func Run(cfg *config.Config) {
 		&entity.CongregationTerritory{},
 		&entity.CongregationTerritoryNote{},
 		&entity.CongregationTerritoryGroup{},
+		&entity.RequestActionState{},
 	)
 	if err != nil {
 		logger.Fatal("automigration failed", "err", err)
@@ -41,6 +42,7 @@ func Run(cfg *config.Config) {
 	storages := service.Storages{
 		User:         storage.NewUserStorage(sql),
 		Congregation: storage.NewCongregationStorage(sql),
+		Chat:         storage.NewChatStorage(sql),
 	}
 
 	serviceOptions := &service.Options{

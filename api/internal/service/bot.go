@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/taraslis453/territory-service-bot/internal/entity"
 	tb "gopkg.in/telebot.v3"
 )
@@ -188,7 +189,7 @@ func (s *botService) handleCongregationPublisherJoinRequest(c tb.Context, b *tb.
 		return c.Send(MessageCongregationNotFound)
 	}
 
-	admin, err := s.storages.User.GetUser(&GetUserFilter{
+	admins, err := s.storages.User.ListUsers(&ListUsersFilter{
 		CongregationID: congregation.ID,
 		Role:           entity.UserRoleAdmin,
 	})
@@ -196,36 +197,55 @@ func (s *botService) handleCongregationPublisherJoinRequest(c tb.Context, b *tb.
 		logger.Error("failed to get admin user by congregation id", "err", err)
 		return err
 	}
-	if admin == nil {
-		logger.Info("admin user not found")
+	if len(admins) == 0 {
+		logger.Info("admins not found")
 		return c.Send(MessageCongregationAdminNotFound)
 	}
 
-	// NOTE using this because we can't pass more than 64 bytes in callback data
-	// https://github.com/nmlorg/metabot/issues/1
-	message := fmt.Sprintf("<a href=\"tg://btn/%s\">\u200b</a> %s", options.User.ID, MessageNewJoinRequest(&MessageNewJoinRequestOptions{
-		FirstName: c.Sender().FirstName,
-		LastName:  c.Sender().LastName,
-		Username:  c.Sender().Username,
-	}))
-	_, err = b.Send(&recepient{chatID: admin.MessengerChatID}, message, &tb.ReplyMarkup{
-		InlineKeyboard: [][]tb.InlineButton{
-			{
-				tb.InlineButton{
-					Unique: approvePublisherJoinRequestButtonUnique,
-					Text:   entity.ApprovePublisherButton,
-				},
-				tb.InlineButton{
-					Unique: rejectPublisherJoinRequestButtonUnique,
-					Text:   entity.RejectPublisherButton,
+	requestActionStateID := uuid.New().String()
+	var messages []entity.AdminMessage
+	for _, admin := range admins {
+		// NOTE using this because we can't pass more than 64 bytes in callback data
+		// https://github.com/nmlorg/metabot/issues/1
+		message := fmt.Sprintf("<a href=\"tg://btn/%s/%s\">\u200b</a> %s", options.User.ID, requestActionStateID, MessageNewJoinRequest(&MessageNewJoinRequestOptions{
+			FirstName: c.Sender().FirstName,
+			LastName:  c.Sender().LastName,
+			Username:  c.Sender().Username,
+		}))
+		sentMessage, err := b.Send(&recepient{chatID: admin.MessengerChatID}, message, &tb.ReplyMarkup{
+			InlineKeyboard: [][]tb.InlineButton{
+				{
+					tb.InlineButton{
+						Unique: approvePublisherJoinRequestButtonUnique,
+						Text:   entity.ApprovePublisherButton,
+					},
+					tb.InlineButton{
+						Unique: rejectPublisherJoinRequestButtonUnique,
+						Text:   entity.RejectPublisherButton,
+					},
 				},
 			},
-		},
-	}, tb.ModeHTML)
+		}, tb.ModeHTML)
+		if err != nil {
+			logger.Error("failed to send message to admin", "err", err)
+			return err
+		}
+		messages = append(messages, entity.AdminMessage{
+			MessageID: fmt.Sprint(sentMessage.ID),
+			ChatID:    fmt.Sprint(sentMessage.Chat.ID),
+		})
+	}
+	logger = logger.With("messages", messages)
+
+	createdActionState, err := s.storages.Chat.CreateRequestActionState(&entity.RequestActionState{
+		ID:            requestActionStateID,
+		AdminMessages: messages,
+	})
 	if err != nil {
-		logger.Error("failed to send message to admin", "err", err)
+		logger.Error("failed to create request action state", "err", err)
 		return err
 	}
+	logger = logger.With("createdActionState", createdActionState)
 
 	options.User.Stage = entity.UserPublisherStageWaitingForAdminApproval
 	_, err = s.storages.User.UpdateUser(options.User)
@@ -327,11 +347,13 @@ func (s *botService) HandleInlineButton(c tb.Context, b *tb.Bot) error {
 
 	switch {
 	case strings.Contains(data, approvePublisherJoinRequestButtonUnique):
-		publisherID := strings.Replace(c.Message().Entities[0].URL, "tg://btn/", "", -1)
-		return s.handleApprovePublisherJoinRequest(c, b, user, publisherID)
+		publisherID := strings.Split(strings.Replace(c.Message().Entities[0].URL, "tg://btn/", "", -1), "/")[0]
+		requestActionStateID := strings.Replace(c.Message().Entities[0].URL, fmt.Sprintf("tg://btn/%s/", publisherID), "", -1)
+		return s.handleApprovePublisherJoinRequest(c, b, user, publisherID, requestActionStateID)
 	case strings.Contains(data, rejectPublisherJoinRequestButtonUnique):
-		publisherID := strings.Replace(c.Message().Entities[0].URL, "tg://btn/", "", -1)
-		return s.handleRejectPublisherJoinRequest(c, b, user, publisherID)
+		publisherID := strings.Split(strings.Replace(c.Message().Entities[0].URL, "tg://btn/", "", -1), "/")[0]
+		requestActionStateID := strings.Replace(c.Message().Entities[0].URL, fmt.Sprintf("tg://btn/%s/", publisherID), "", -1)
+		return s.handleRejectPublisherJoinRequest(c, b, user, publisherID, requestActionStateID)
 	case strings.Contains(data, territoryGroupButtonUnique):
 		groupName := strings.Replace(data, territoryGroupButtonUnique, "", -1)
 		return s.handleViewTerritoriesList(c, user, groupName)
@@ -340,10 +362,10 @@ func (s *botService) HandleInlineButton(c tb.Context, b *tb.Bot) error {
 		return s.handleTakeTerritoryRequest(c, b, user, territoryID)
 	case strings.Contains(data, approveTerritoryTakeButtonUnique):
 		parts := strings.Split(strings.TrimPrefix(c.Message().CaptionEntities[0].URL, "tg://btn/"), "/")
-		return s.handleApproveTerritoryTakeRequest(c, b, user, parts[0], parts[1])
+		return s.handleApproveTerritoryTakeRequest(c, b, parts[0], parts[1], parts[2])
 	case strings.Contains(data, rejectTerritoryTakeButtonUnique):
 		parts := strings.Split(strings.TrimPrefix(c.Message().CaptionEntities[0].URL, "tg://btn/"), "/")
-		return s.handleRejectTerritoryTakeRequest(c, b, user, parts[0], parts[1])
+		return s.handleRejectTerritoryTakeRequest(c, b, parts[0], parts[1], parts[2])
 	case strings.Contains(data, leaveTerritoryNoteButtonUnique):
 		territoryID := strings.Replace(data, leaveTerritoryNoteButtonUnique, "", -1)
 		return s.handleLeaveTerritoryNoteRequest(c, user, territoryID)
@@ -610,7 +632,7 @@ func (s botService) handleReturnTerritoryRequest(c tb.Context, b *tb.Bot, user *
 	}
 
 	if user.Role == entity.UserRolePublisher {
-		admin, err := s.storages.User.GetUser(&GetUserFilter{
+		admins, err := s.storages.User.ListUsers(&ListUsersFilter{
 			CongregationID: user.CongregationID,
 			Role:           entity.UserRoleAdmin,
 		})
@@ -618,17 +640,19 @@ func (s botService) handleReturnTerritoryRequest(c tb.Context, b *tb.Bot, user *
 			logger.Error("failed to get admin", "err", err)
 			return err
 		}
-		if admin == nil {
+		if len(admins) == 0 {
 			logger.Info("admin not found")
 			return c.Send(MessageCongregationAdminNotFound)
 		}
 
-		_, err = b.Send(&recepient{
-			chatID: admin.MessengerChatID,
-		}, MessagePublisherReturnedTerritory(user.FullName, territory.Title), tb.ModeMarkdown)
-		if err != nil {
-			logger.Error("failed to send message", "err", err)
-			return err
+		for _, admin := range admins {
+			_, err = b.Send(&recepient{
+				chatID: admin.MessengerChatID,
+			}, MessagePublisherReturnedTerritory(user.FullName, territory.Title), tb.ModeMarkdown)
+			if err != nil {
+				logger.Error("failed to send message", "err", err)
+				return err
+			}
 		}
 	}
 
@@ -647,7 +671,7 @@ func (s botService) handleReturnTerritoryRequest(c tb.Context, b *tb.Bot, user *
 	return nil
 }
 
-func (s *botService) handleApprovePublisherJoinRequest(c tb.Context, b *tb.Bot, admin *entity.User, publisherID string) error {
+func (s *botService) handleApprovePublisherJoinRequest(c tb.Context, b *tb.Bot, admin *entity.User, publisherID string, requestActionStateID string) error {
 	logger := s.logger.
 		Named("handleApprovePublisherJoinRequest").
 		With("publisherID", publisherID)
@@ -687,20 +711,39 @@ func (s *botService) handleApprovePublisherJoinRequest(c tb.Context, b *tb.Bot, 
 		logger.Error("failed to render menu for publisher", "err", err)
 	}
 
-	messageID := c.Callback().Message.ID
-	_, err = b.Edit(&editable{
-		chatID:    c.Callback().Message.Chat.ID,
-		messageID: fmt.Sprintf("%d", messageID),
-	}, MessageCongregationJoinRequestApprovedDone(publisher.FullName), tb.ModeMarkdown)
+	requestActionState, err := s.storages.Chat.GetRequestActionState(requestActionStateID)
 	if err != nil {
-		logger.Error("failed to edit message", "err", err)
+		logger.Error("failed to get request action state", "err", err)
+		return err
+	}
+
+	for _, message := range requestActionState.AdminMessages {
+		chatID, err := strconv.ParseInt(message.ChatID, 10, 64)
+		if err != nil {
+			logger.Error("failed to parse chat id", "err", err)
+			return err
+		}
+
+		_, err = b.Edit(&editable{
+			chatID:    chatID,
+			messageID: message.MessageID,
+		}, MessageCongregationJoinRequestApprovedDone(publisher.FullName), tb.ModeMarkdown)
+		if err != nil {
+			logger.Error("failed to edit message", "err", err)
+			return err
+		}
+	}
+
+	err = s.storages.Chat.DeleteRequestActionState(requestActionStateID)
+	if err != nil {
+		logger.Error("failed to delete request action state", "err", err)
 		return err
 	}
 
 	return nil
 }
 
-func (s *botService) handleRejectPublisherJoinRequest(c tb.Context, b *tb.Bot, admin *entity.User, publisherID string) error {
+func (s *botService) handleRejectPublisherJoinRequest(c tb.Context, b *tb.Bot, admin *entity.User, publisherID string, requestActionStateID string) error {
 	logger := s.logger.
 		Named("handleRejectPublisherJoinRequest").
 		With("publisherID", publisherID)
@@ -731,14 +774,26 @@ func (s *botService) handleRejectPublisherJoinRequest(c tb.Context, b *tb.Bot, a
 		return err
 	}
 
-	messageID := c.Callback().Message.ID
-	_, err = b.Edit(&editable{
-		chatID:    c.Callback().Message.Chat.ID,
-		messageID: fmt.Sprintf("%d", messageID),
-	}, MessageCongregationJoinRequestRejectedDone(publisher.FullName), tb.ModeMarkdown)
+	requestActionState, err := s.storages.Chat.GetRequestActionState(requestActionStateID)
 	if err != nil {
-		logger.Error("failed to edit message", "err", err)
+		logger.Error("failed to get request action state", "err", err)
 		return err
+	}
+
+	for _, message := range requestActionState.AdminMessages {
+		chatID, err := strconv.ParseInt(message.ChatID, 10, 64)
+		if err != nil {
+			logger.Error("failed to parse chat id", "err", err)
+			return err
+		}
+		_, err = b.Edit(&editable{
+			chatID:    chatID,
+			messageID: message.MessageID,
+		}, MessageCongregationJoinRequestRejectedDone(publisher.FullName), tb.ModeMarkdown)
+		if err != nil {
+			logger.Error("failed to edit message", "err", err)
+			return err
+		}
 	}
 
 	return nil
@@ -861,7 +916,7 @@ func (s *botService) handleTakeTerritoryRequest(c tb.Context, b *tb.Bot, user *e
 		return c.Send(MessageTerritoryNotAvailable)
 	}
 
-	admin, err := s.storages.User.GetUser(&GetUserFilter{
+	admins, err := s.storages.User.ListUsers(&ListUsersFilter{
 		CongregationID: user.CongregationID,
 		Role:           entity.UserRoleAdmin,
 	})
@@ -869,37 +924,58 @@ func (s *botService) handleTakeTerritoryRequest(c tb.Context, b *tb.Bot, user *e
 		logger.Error("failed to get admin user by congregation id", "err", err)
 		return err
 	}
-	if admin == nil {
+	if len(admins) == 0 {
 		logger.Info("admin user not found")
 		return c.Send(MessageCongregationAdminNotFound)
 	}
 
-	message := fmt.Sprintf("<a href=\"tg://btn/%s/%s\">\u200b</a> %s", user.ID, territoryID, MessageTakeTerritoryRequest(user, territory.Title))
-	_, err = b.Send(&recepient{chatID: admin.MessengerChatID},
-		&tb.Photo{
-			File: tb.File{
-				FileID: territory.FileID,
+	requestActionStateID := uuid.New().String()
+	var messages []entity.AdminMessage
+
+	for _, admin := range admins {
+		message := fmt.Sprintf("<a href=\"tg://btn/%s/%s/%s\">\u200b</a> %s", user.ID, territoryID, requestActionStateID, MessageTakeTerritoryRequest(user, territory.Title))
+		sentMessage, err := b.Send(&recepient{chatID: admin.MessengerChatID},
+			&tb.Photo{
+				File: tb.File{
+					FileID: territory.FileID,
+				},
+				Caption: message,
 			},
-			Caption: message,
-		},
-		&tb.ReplyMarkup{
-			InlineKeyboard: [][]tb.InlineButton{
-				{
-					tb.InlineButton{
-						Unique: approveTerritoryTakeButtonUnique,
-						Text:   entity.ApproveTakeTerritoryButton,
-					},
-					tb.InlineButton{
-						Unique: rejectTerritoryTakeButtonUnique,
-						Text:   entity.RejectTakeTerritoryButton,
+			&tb.ReplyMarkup{
+				InlineKeyboard: [][]tb.InlineButton{
+					{
+						tb.InlineButton{
+							Unique: approveTerritoryTakeButtonUnique,
+							Text:   entity.ApproveTakeTerritoryButton,
+						},
+						tb.InlineButton{
+							Unique: rejectTerritoryTakeButtonUnique,
+							Text:   entity.RejectTakeTerritoryButton,
+						},
 					},
 				},
-			},
-		}, tb.ModeHTML)
+			}, tb.ModeHTML)
+		if err != nil {
+			logger.Error("failed to send message to admin", "err", err)
+			return err
+		}
+
+		messages = append(messages, entity.AdminMessage{
+			MessageID: fmt.Sprint(sentMessage.ID),
+			ChatID:    fmt.Sprint(sentMessage.Chat.ID),
+		})
+	}
+	logger = logger.With("messages", messages)
+
+	createdActionState, err := s.storages.Chat.CreateRequestActionState(&entity.RequestActionState{
+		ID:            requestActionStateID,
+		AdminMessages: messages,
+	})
 	if err != nil {
-		logger.Error("failed to send message to admin", "err", err)
+		logger.Error("failed to create request action state", "err", err)
 		return err
 	}
+	logger = logger.With("createdActionState", createdActionState)
 
 	messageID := c.Callback().Message.ID
 	_, err = b.EditCaption(&editable{
@@ -914,9 +990,10 @@ func (s *botService) handleTakeTerritoryRequest(c tb.Context, b *tb.Bot, user *e
 	return nil
 }
 
-func (s *botService) handleApproveTerritoryTakeRequest(c tb.Context, b *tb.Bot, admin *entity.User, publisherID string, territoryID string) error {
+func (s *botService) handleApproveTerritoryTakeRequest(c tb.Context, b *tb.Bot, publisherID string, territoryID string, requestActionStateID string) error {
 	logger := s.logger.
-		Named("handleApproveTerritoryTakeRequest")
+		Named("handleApproveTerritoryTakeRequest").
+		With("publisherID", publisherID, "territoryID", territoryID, "requestActionStateID", requestActionStateID)
 
 	publisher, err := s.storages.User.GetUser(&GetUserFilter{
 		ID: publisherID,
@@ -942,6 +1019,11 @@ func (s *botService) handleApproveTerritoryTakeRequest(c tb.Context, b *tb.Bot, 
 		return c.Send(MessageTerritoryNotFound)
 	}
 
+	if !*territory.IsAvailable {
+		logger.Info("territory is not available")
+		return c.Send(MessageTerritoryNotAvailable)
+	}
+
 	notAvailable := false
 	territory.IsAvailable = &notAvailable
 	territory.InUseByUserID = &publisherID
@@ -964,23 +1046,42 @@ func (s *botService) handleApproveTerritoryTakeRequest(c tb.Context, b *tb.Bot, 
 		return err
 	}
 
-	messageID := c.Callback().Message.ID
-	_, err = b.EditCaption(&editable{
-		chatID:    c.Callback().Message.Chat.ID,
-		messageID: fmt.Sprintf("%d", messageID),
-	}, MessageTakeTerritoryRequestApprovedDone(publisher.FullName, territory.Title), tb.ModeMarkdown)
+	requestActionState, err := s.storages.Chat.GetRequestActionState(requestActionStateID)
 	if err != nil {
-		logger.Error("failed to edit message", "err", err)
+		logger.Error("failed to get request action state", "err", err)
+		return err
+	}
+
+	for _, message := range requestActionState.AdminMessages {
+		chatID, err := strconv.ParseInt(message.ChatID, 10, 64)
+		if err != nil {
+			logger.Error("failed to parse chat id", "err", err)
+			return err
+		}
+
+		_, err = b.EditCaption(&editable{
+			chatID:    chatID,
+			messageID: message.MessageID,
+		}, MessageTakeTerritoryRequestApprovedDone(publisher.FullName, territory.Title), tb.ModeMarkdown)
+		if err != nil {
+			logger.Error("failed to edit message", "err", err)
+			return err
+		}
+	}
+
+	err = s.storages.Chat.DeleteRequestActionState(requestActionStateID)
+	if err != nil {
+		logger.Error("failed to delete request action state", "err", err)
 		return err
 	}
 
 	return nil
 }
 
-func (s *botService) handleRejectTerritoryTakeRequest(c tb.Context, b *tb.Bot, admin *entity.User, publisherID string, territoryID string) error {
+func (s *botService) handleRejectTerritoryTakeRequest(c tb.Context, b *tb.Bot, publisherID string, territoryID string, requestActionStateID string) error {
 	logger := s.logger.
 		Named("handleRejectTerritoryTakeRequest").
-		With("admin", admin, "publisherID", publisherID, "territoryID", territoryID)
+		With("publisherID", publisherID, "territoryID", territoryID, "requestActionStateID", requestActionStateID)
 
 	publisher, err := s.storages.User.GetUser(&GetUserFilter{
 		ID: publisherID,
@@ -1013,13 +1114,32 @@ func (s *botService) handleRejectTerritoryTakeRequest(c tb.Context, b *tb.Bot, a
 		return err
 	}
 
-	messageID := c.Callback().Message.ID
-	_, err = b.EditCaption(&editable{
-		chatID:    c.Callback().Message.Chat.ID,
-		messageID: fmt.Sprintf("%d", messageID),
-	}, MessageTakeTerritoryRequestRejectedDone(publisher.FullName, territory.Title), tb.ModeMarkdown)
+	requestActionState, err := s.storages.Chat.GetRequestActionState(requestActionStateID)
 	if err != nil {
-		logger.Error("failed to edit message", "err", err)
+		logger.Error("failed to get request action state", "err", err)
+		return err
+	}
+
+	for _, message := range requestActionState.AdminMessages {
+		chatID, err := strconv.ParseInt(message.ChatID, 10, 64)
+		if err != nil {
+			logger.Error("failed to parse chat id", "err", err)
+			return err
+		}
+
+		_, err = b.EditCaption(&editable{
+			chatID:    chatID,
+			messageID: message.MessageID,
+		}, MessageTakeTerritoryRequestRejectedDone(publisher.FullName, territory.Title), tb.ModeMarkdown)
+		if err != nil {
+			logger.Error("failed to edit message", "err", err)
+			return err
+		}
+	}
+
+	err = s.storages.Chat.DeleteRequestActionState(requestActionStateID)
+	if err != nil {
+		logger.Error("failed to delete request action state", "err", err)
 		return err
 	}
 

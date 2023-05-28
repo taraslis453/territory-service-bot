@@ -66,6 +66,26 @@ func (r *userStorage) GetUser(filter *service.GetUserFilter) (*entity.User, erro
 	return &user, nil
 }
 
+func (r *userStorage) ListUsers(filter *service.ListUsersFilter) ([]entity.User, error) {
+	stmt := r.Instance()
+	if filter.CongregationID != "" {
+		stmt = stmt.Where(&entity.User{CongregationID: filter.CongregationID})
+	}
+	if filter.Role != "" {
+		stmt = stmt.Where(&entity.User{Role: filter.Role})
+	}
+
+	users := make([]entity.User, 0)
+	err := stmt.
+		Find(&users).
+		Error
+	if err != nil {
+		return nil, err
+	}
+
+	return users, nil
+}
+
 func (r *userStorage) UpdateUser(user *entity.User) (*entity.User, error) {
 	err := r.Instance().
 		Where(&entity.User{ID: user.ID}).

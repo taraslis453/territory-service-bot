@@ -5,12 +5,14 @@ import "github.com/taraslis453/territory-service-bot/internal/entity"
 type Storages struct {
 	User         UserStorage
 	Congregation CongregationStorage
+	Chat         ChatStorage
 }
 
 type UserStorage interface {
 	CreateUser(*entity.User) (*entity.User, error)
 	GetUser(filter *GetUserFilter) (*entity.User, error)
 	UpdateUser(*entity.User) (*entity.User, error)
+	ListUsers(filter *ListUsersFilter) ([]entity.User, error)
 }
 
 type GetUserFilter struct {
@@ -18,6 +20,11 @@ type GetUserFilter struct {
 	MessengerUserID string
 	CongregationID  string
 	Role            entity.UserRole
+}
+
+type ListUsersFilter struct {
+	CongregationID string
+	Role           entity.UserRole
 }
 
 type CongregationStorage interface {
@@ -59,4 +66,10 @@ type ListTerritoriesFilter struct {
 type ListTerritoryGroupsFilter struct {
 	CongregationID string
 	IDs            []string
+}
+
+type ChatStorage interface {
+	CreateRequestActionState(*entity.RequestActionState) (*entity.RequestActionState, error)
+	GetRequestActionState(id string) (*entity.RequestActionState, error)
+	DeleteRequestActionState(id string) error
 }
