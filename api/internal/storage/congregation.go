@@ -105,6 +105,9 @@ func (r *congregationStorage) GetTerritory(filter *service.GetTerritoryFilter) (
 	if filter.ID != "" {
 		stmt = stmt.Where(&entity.CongregationTerritory{ID: filter.ID})
 	}
+	if filter.GroupID != "" {
+		stmt = stmt.Where(&entity.CongregationTerritory{GroupID: filter.GroupID})
+	}
 
 	territory := entity.CongregationTerritory{}
 	err := stmt.

@@ -20,6 +20,7 @@ type CongregationTerritory struct {
 	Title          string `gorm:"index"`
 	GroupID        string
 	FileID         string
+	FileType       CongregationTerritoryFileType
 	// TODO: can we remove this field? because we have InUseByUserID
 	IsAvailable   *bool
 	InUseByUserID *string
@@ -27,6 +28,13 @@ type CongregationTerritory struct {
 	LastTakenAt time.Time
 	Notes       []CongregationTerritoryNote `gorm:"foreignkey:TerritoryID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
 }
+
+type CongregationTerritoryFileType string
+
+var (
+	CongregationTerritoryFileTypePhoto    CongregationTerritoryFileType = "photo"
+	CongregationTerritoryFileTypeDocument CongregationTerritoryFileType = "document"
+)
 
 type CongregationTerritoryNote struct {
 	ID          string `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()"`

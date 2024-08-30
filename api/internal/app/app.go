@@ -27,6 +27,11 @@ func Run(cfg *config.Config) {
 		logger.Fatal("failed to init postgresql", "err", err)
 	}
 
+	err = sql.DB.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`).Error
+	if err != nil {
+		logger.Fatal("failed to create extension uuid-ossp", "err", err)
+	}
+
 	err = sql.DB.AutoMigrate(
 		&entity.User{},
 		&entity.Congregation{},

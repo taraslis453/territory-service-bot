@@ -492,9 +492,26 @@ func (s *botService) handleViewMyTerritoryList(c tb.Context, user *entity.User) 
 			notes = append(notes, note.Text)
 		}
 		caption := MessageMyTerritoryListTerritoryCaption(territory.Title, territory.LastTakenAt, notes)
-		err := c.Send(&tb.Photo{File: tb.File{
-			FileID: territory.FileID,
-		}, Caption: caption}, &tb.SendOptions{
+
+		var sendObject interface{}
+		if territory.FileType == entity.CongregationTerritoryFileTypePhoto {
+			sendObject = &tb.Photo{File: tb.File{
+				FileID: territory.FileID,
+			},
+				Caption: caption,
+			}
+		} else if territory.FileType == entity.CongregationTerritoryFileTypeDocument {
+			sendObject = &tb.Document{File: tb.File{
+				FileID: territory.FileID,
+			},
+				Caption: caption,
+			}
+		} else {
+			logger.Error("unknown file type", "file_type", territory.FileType)
+			continue
+		}
+
+		err := c.Send(sendObject, &tb.SendOptions{
 			ReplyMarkup: &tb.ReplyMarkup{
 				InlineKeyboard: [][]tb.InlineButton{
 					{
@@ -840,11 +857,6 @@ func (s *botService) handleViewTerritoriesList(c tb.Context, user *entity.User, 
 
 	for _, territory := range territories {
 		var sendOptions tb.SendOptions
-		photo := tb.Photo{
-			File: tb.File{
-				FileID: territory.FileID,
-			},
-		}
 
 		var inUseByFullName string
 		if territory.InUseByUserID != nil {
@@ -868,13 +880,31 @@ func (s *botService) handleViewTerritoriesList(c tb.Context, user *entity.User, 
 			}
 		}
 
-		photo.Caption = MessageTerritoryListTerritoryCaption(MessageTerritoryListTerritoryCaptionOptions{
+		caption := MessageTerritoryListTerritoryCaption(MessageTerritoryListTerritoryCaptionOptions{
 			UserRole:        user.Role,
 			Title:           territory.Title,
 			LastTakenAt:     territory.LastTakenAt,
 			Notes:           notes,
 			InUseByFullName: inUseByFullName,
 		})
+
+		var sendObject interface{}
+		if territory.FileType == entity.CongregationTerritoryFileTypePhoto {
+			sendObject = &tb.Photo{File: tb.File{
+				FileID: territory.FileID,
+			},
+				Caption: caption,
+			}
+		} else if territory.FileType == entity.CongregationTerritoryFileTypeDocument {
+			sendObject = &tb.Document{File: tb.File{
+				FileID: territory.FileID,
+			},
+				Caption: caption,
+			}
+		} else {
+			logger.Error("unknown file type", "file_type", territory.FileType)
+			continue
+		}
 
 		if territory.InUseByUserID == nil {
 			button := tb.InlineButton{
@@ -886,9 +916,9 @@ func (s *botService) handleViewTerritoriesList(c tb.Context, user *entity.User, 
 			markup := &tb.ReplyMarkup{InlineKeyboard: keyboard}
 			sendOptions.ReplyMarkup = markup
 		}
-		err := c.Send(&photo, &sendOptions, tb.ModeMarkdown)
+		err := c.Send(sendObject, &sendOptions, tb.ModeMarkdown)
 		if err != nil {
-			logger.Error("failed to send photo", "err", err)
+			logger.Error("failed to send territory", "err", err)
 			return err
 		}
 	}
@@ -934,13 +964,25 @@ func (s *botService) handleTakeTerritoryRequest(c tb.Context, b *tb.Bot, user *e
 
 	for _, admin := range admins {
 		message := fmt.Sprintf("<a href=\"tg://btn/%s/%s/%s\">\u200b</a> %s", user.ID, territoryID, requestActionStateID, MessageTakeTerritoryRequest(user, territory.Title))
-		sentMessage, err := b.Send(&recepient{chatID: admin.MessengerChatID},
-			&tb.Photo{
-				File: tb.File{
-					FileID: territory.FileID,
-				},
-				Caption: message,
+		var sendObject interface{}
+		if territory.FileType == entity.CongregationTerritoryFileTypePhoto {
+			sendObject = &tb.Photo{File: tb.File{
+				FileID: territory.FileID,
 			},
+				Caption: message,
+			}
+		} else if territory.FileType == entity.CongregationTerritoryFileTypeDocument {
+			sendObject = &tb.Document{File: tb.File{
+				FileID: territory.FileID,
+			},
+				Caption: message,
+			}
+		} else {
+			logger.Error("unknown file type", "file_type", territory.FileType)
+			continue
+		}
+		sentMessage, err := b.Send(&recepient{chatID: admin.MessengerChatID},
+			sendObject,
 			&tb.ReplyMarkup{
 				InlineKeyboard: [][]tb.InlineButton{
 					{
@@ -1218,6 +1260,92 @@ func (s *botService) HandleImageUpload(c tb.Context, b *tb.Bot) error {
 		GroupID:        group.ID,
 		Title:          territoryName,
 		FileID:         fileID,
+		FileType:       entity.CongregationTerritoryFileTypePhoto,
+		IsAvailable:    &available,
+	})
+	if err != nil {
+		logger.Error("failed to create territory", "err", err)
+		return err
+	}
+	logger.With("territory", territory)
+
+	logger.Info("successfully handled image upload")
+	return c.Send(fmt.Sprintf("Територія %s успішно додана в групу %s!", territoryName, groupName), &tb.SendOptions{}, tb.ModeMarkdown)
+}
+
+func (s *botService) HandleDocumentUpload(c tb.Context, b *tb.Bot) error {
+	logger := s.logger.
+		Named("HandleDocumentUpload")
+
+	user, err := s.storages.User.GetUser(&GetUserFilter{
+		MessengerUserID: fmt.Sprint(c.Sender().ID),
+	})
+	if err != nil {
+		logger.Error("failed to get user by messenger user id", "err", err)
+		return err
+	}
+	if user == nil {
+		logger.Info("user not found")
+		return c.Send(MessageUserNotFound)
+	}
+	if user.Role != entity.UserRoleAdmin {
+		logger.Info("user is not admin")
+		return nil
+	}
+
+	congregation, err := s.storages.Congregation.GetCongregation(&GetCongregationFilter{
+		ID: user.CongregationID,
+	})
+	if err != nil {
+		logger.Error("failed to get congregation by messenger user id", "err", err)
+		return err
+	}
+	if congregation == nil {
+		logger.Info("congregation not found")
+		return c.Send(MessageCongregationNotFound)
+	}
+
+	msg := c.Message()
+	fileID := msg.Document.FileID
+	caption := msg.Caption
+	if caption == "" || !strings.Contains(caption, "_") {
+		return s.sendAddTerritoryInstruction(c)
+	}
+
+	split := strings.Split(caption, "_") // Klevan_123-а
+	groupName := split[0]                // Klevan
+	territoryName := split[1]            // 123-а
+
+	group, err := s.storages.Congregation.GetOrCreateCongregationTerritoryGroup(&GetOrCreateCongregationTerritoryGroupOptions{
+		CongregationID: congregation.ID,
+		Title:          groupName,
+	})
+	if err != nil {
+		logger.Error("failed to create or get congregation territory group", "err", err)
+		return err
+	}
+
+	territory, err := s.storages.Congregation.GetTerritory(&GetTerritoryFilter{
+		CongregationID: congregation.ID,
+		Title:          territoryName,
+		GroupID:        group.ID,
+	})
+	if err != nil {
+		logger.Error("failed to get territory", "err", err)
+		return err
+	}
+	if territory != nil {
+		logger.Info("territory already exists")
+		return c.Send(MessageTerritoryExistsInGroup(territoryName, groupName), &tb.SendOptions{}, tb.ModeMarkdown)
+	}
+
+	available := true
+	territory, err = s.storages.Congregation.CreateTerritory(&entity.CongregationTerritory{
+		CongregationID: congregation.ID,
+		GroupID:        group.ID,
+		Title:          territoryName,
+		FileID:         fileID,
+		FileType:       entity.CongregationTerritoryFileTypeDocument,
 		IsAvailable:    &available,
 	})
 	if err != nil {

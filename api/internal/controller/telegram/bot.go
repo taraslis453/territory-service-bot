@@ -46,6 +46,9 @@ func NewBot(options *Options) error {
 	b.Handle(tb.OnPhoto, func(c tb.Context) error {
 		return wrapHandler(c, b, options.Logger, options.Services.Bot.HandleImageUpload)
 	})
+	b.Handle(tb.OnDocument, func(c tb.Context) error {
+		return wrapHandler(c, b, options.Logger, options.Services.Bot.HandleDocumentUpload)
+	})
 
 	b.Start()
 

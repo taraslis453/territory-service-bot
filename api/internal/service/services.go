@@ -35,6 +35,7 @@ type BotService interface {
 	RenderMenu(c tb.Context, b *tb.Bot) error
 	HandleInlineButton(c tb.Context, b *tb.Bot) error
 	HandleImageUpload(c tb.Context, b *tb.Bot) error
+	HandleDocumentUpload(c tb.Context, b *tb.Bot) error
 }
 
 var (
@@ -66,7 +67,7 @@ var (
 	MessageCongregationJoinRequestRejected = "Запит на приєднання до збору відхилено 😔"
 
 	MessageHowCanIHelpYou          = "Чим можу допомогти? 🙂"
-	MessageAddTerritoryInstruction = "Надішли зображення території де повідомлення відповідає зразку: *Група_назва* \nНаприклад: *Львів_123-а*, *Рівне_200* 📸"
+	MessageAddTerritoryInstruction = "Надішли зображення або документ території де повідомлення відповідає зразку: *Група_назва* \nНаприклад: *Львів_123-а*, *Рівне_200* 📸"
 	MessageTerritoryExistsInGroup  = func(title string, groupTitle string) string {
 		return fmt.Sprintf("Територія з назвою *%s* вже існує в групі *%s* 🤷", title, groupTitle)
 	}
