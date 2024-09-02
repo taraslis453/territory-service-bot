@@ -38,6 +38,10 @@ type BotService interface {
 	HandleDocumentUpload(c tb.Context, b *tb.Bot) error
 }
 
+func GenerateContactLink(fullName string, userID int64) string {
+	return fmt.Sprintf("[%s](tg://user?id=%d)", fullName, userID)
+}
+
 var (
 	MessageEnterFullName               = "Як мені тебе запам'ятати? (ім’я та фамілія) ✍️"
 	MessageEnterCongregationName       = "З якого ти збору? ✍️"
@@ -53,15 +57,21 @@ var (
 		userFullName := fmt.Sprintf("%s %s", options.FirstName, options.LastName)
 		if options.Username != "" {
 			userFullName += fmt.Sprintf(" (@%s)", options.Username)
-		}
-		message := fmt.Sprint(userFullName, " хоче приєднатися")
+		}// we can delete the username ?? 
+
+		//NOTE: if the user disabled  forwarding in the privacy settings the link won't work
+		contactLink := fmt.Sprintf("<a href=\"tg://user?id=%d\">%s</a>",  options.UserID, userFullName)
+		message := fmt.Sprintf("%s хоче приєднатися", contactLink)
 		return message
 	}
-	MessageCongregationJoinRequestApprovedDone = func(fullName string) string {
-		return fmt.Sprintf("Вісника *%s* приєднано до збору ✅", fullName)
+
+	MessageCongregationJoinRequestApprovedDone = func(fullName string, userID int64) string {
+		contactLink := GenerateContactLink(fullName, userID)
+		return fmt.Sprintf("Вісника %s приєднано до збору ✅", contactLink)
 	}
-	MessageCongregationJoinRequestRejectedDone = func(fullName string) string {
-		return fmt.Sprintf("Користувача *%s* відхилено ❌", fullName)
+	MessageCongregationJoinRequestRejectedDone = func(fullName string, userID int64) string {
+		contactLink := GenerateContactLink(fullName, userID)
+		return fmt.Sprintf("Користувача %s відхилено ❌", contactLink)
 	}
 	MessageCongregationJoinRequestApproved = "Запит на приєднання до збору прийнято 🎉"
 	MessageCongregationJoinRequestRejected = "Запит на приєднання до збору відхилено 😔"
@@ -94,7 +104,8 @@ var (
 
 		if options.UserRole == entity.UserRoleAdmin {
 			if options.InUseByFullName != "" {
-				caption += fmt.Sprintf("\nВикористовує: *%s*", options.InUseByFullName)
+				clickableName := GenerateContactLink(options.InUseByFullName, options.InUseByUserID)
+				caption += fmt.Sprintf("\nВикористовує: %s", clickableName)
 			}
 
 			if len(options.Notes) > 0 {
@@ -109,8 +120,10 @@ var (
 	}
 
 	MessageTakeTerritoryRequest = func(user *entity.User, territoryTitle string) string {
-		return fmt.Sprintf("%s хоче взяти %s", user.FullName, territoryTitle)
+		contactLink := fmt.Sprintf("<a href=\"tg://user?id=%s\">%s</a>", user.MessengerUserID, user.FullName)
+		return fmt.Sprintf("%s хоче взяти %s", contactLink, territoryTitle)
 	}
+
 	MessageTakeTerritoryRequestSent = "Запит на взяття території відправлено. Очікуй відповідь 😌"
 
 	MessageTakeTerritoryRequestApproved = func(territoryTitle string, notes []string) string {
@@ -124,19 +137,22 @@ var (
 		}
 		return message
 	}
-	MessageTakeTerritoryRequestApprovedDone = func(fullName string, territoryName string) string {
-		return fmt.Sprintf("Вісника *%s* призначено на територію *%s* ✅", fullName, territoryName)
-	}
+	MessageTakeTerritoryRequestApprovedDone = func(fullName string, userID int64, territoryName string) string {
+		clickableName := GenerateContactLink(fullName, userID)
+		return fmt.Sprintf("Вісника %s призначено на територію *%s* ✅", clickableName, territoryName)
+	}//dont make the username link *bold*, it brakes the formatting 
 
 	MessageTakeTerritoryRequestRejected = func(territoryTitle string) string {
 		return fmt.Sprintf("Запит на взяття території *%s* відхилено ❌", territoryTitle)
 	}
-	MessageTakeTerritoryRequestRejectedDone = func(fullName string, territoryTitle string) string {
-		return fmt.Sprintf("Вісника *%s* відхилено на територію *%s* ❌", fullName, territoryTitle)
+	MessageTakeTerritoryRequestRejectedDone = func(fullName string, userID int64, territoryTitle string) string {
+		clickableName := GenerateContactLink(fullName, userID)
+		return fmt.Sprintf("Вісника %s відхилено на територію *%s* ❌", clickableName, territoryTitle)
 	}
 
-	MessagePublisherReturnedTerritory = func(fullName string, territoryTitle string) string {
-		return fmt.Sprintf("Вісник *%s* повернув територію *%s* ✅", fullName, territoryTitle)
+	MessagePublisherReturnedTerritory = func(fullName string, userID int64, territoryTitle string) string {
+		contactLink := GenerateContactLink(fullName, userID)
+		return fmt.Sprintf("Вісник %s повернув територію *%s* ✅", contactLink, territoryTitle)
 	}
 	MessageLeaveTerritoryNote = func(territoryTitle string) string {
 		return fmt.Sprintf("Залишіть нотатку для території %s ✍️", territoryTitle)
@@ -154,6 +170,7 @@ type MessageNewJoinRequestOptions struct {
 	FirstName string
 	LastName  string
 	Username  string
+	UserID    int64
 }
 
 type MessageTerritoryListTerritoryCaptionOptions struct {
@@ -162,4 +179,5 @@ type MessageTerritoryListTerritoryCaptionOptions struct {
 	LastTakenAt     time.Time
 	Notes           []string
 	InUseByFullName string
+	InUseByUserID   int64
 }
