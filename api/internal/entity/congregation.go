@@ -21,9 +21,7 @@ type CongregationTerritory struct {
 	GroupID        string
 	FileID         string
 	FileType       CongregationTerritoryFileType
-	// TODO: can we remove this field? because we have InUseByUserID
-	IsAvailable   *bool
-	InUseByUserID *string
+	InUseByUserID  *string `gorm:"index"`
 	// NOTE: when user takes territory, we update this field and when user returns territory, we update this field
 	LastTakenAt time.Time
 	Notes       []CongregationTerritoryNote `gorm:"foreignkey:TerritoryID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`

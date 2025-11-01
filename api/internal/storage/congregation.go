@@ -133,7 +133,11 @@ func (r *congregationStorage) ListTerritories(filter *service.ListTerritoriesFil
 		stmt = stmt.Where(&entity.CongregationTerritory{GroupID: filter.GroupID})
 	}
 	if filter.Available != nil {
-		stmt = stmt.Where(&entity.CongregationTerritory{IsAvailable: filter.Available})
+		if *filter.Available {
+			stmt = stmt.Where("in_use_by_user_id IS NULL")
+		} else {
+			stmt = stmt.Where("in_use_by_user_id IS NOT NULL")
+		}
 	}
 	if filter.SortBy != "" {
 		stmt = stmt.Order(filter.SortBy)

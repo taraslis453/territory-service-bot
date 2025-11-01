@@ -638,8 +638,6 @@ func (s botService) handleReturnTerritoryRequest(c tb.Context, b *tb.Bot, user *
 	}
 
 	territory.InUseByUserID = nil
-	available := true
-	territory.IsAvailable = &available
 	territory.LastTakenAt = time.Now()
 
 	_, err = s.storages.Congregation.UpdateTerritory(territory)
@@ -941,7 +939,7 @@ func (s *botService) handleTakeTerritoryRequest(c tb.Context, b *tb.Bot, user *e
 		logger.Info("territory not found")
 		return c.Send(MessageTerritoryNotFound)
 	}
-	if !*territory.IsAvailable {
+	if territory.InUseByUserID != nil {
 		logger.Info("territory is not available")
 		return c.Send(MessageTerritoryNotAvailable)
 	}
@@ -1061,13 +1059,11 @@ func (s *botService) handleApproveTerritoryTakeRequest(c tb.Context, b *tb.Bot, 
 		return c.Send(MessageTerritoryNotFound)
 	}
 
-	if !*territory.IsAvailable {
+	if territory.InUseByUserID != nil {
 		logger.Info("territory is not available")
 		return c.Send(MessageTerritoryNotAvailable)
 	}
 
-	notAvailable := false
-	territory.IsAvailable = &notAvailable
 	territory.InUseByUserID = &publisherID
 	territory.LastTakenAt = time.Now()
 	territory, err = s.storages.Congregation.UpdateTerritory(territory)
@@ -1254,14 +1250,12 @@ func (s *botService) HandleImageUpload(c tb.Context, b *tb.Bot) error {
 		return c.Send(MessageTerritoryExistsInGroup(territoryName, groupName), &tb.SendOptions{}, tb.ModeMarkdown)
 	}
 
-	available := true
 	territory, err = s.storages.Congregation.CreateTerritory(&entity.CongregationTerritory{
 		CongregationID: congregation.ID,
 		GroupID:        group.ID,
 		Title:          territoryName,
 		FileID:         fileID,
 		FileType:       entity.CongregationTerritoryFileTypePhoto,
-		IsAvailable:    &available,
 	})
 	if err != nil {
 		logger.Error("failed to create territory", "err", err)
@@ -1339,14 +1333,12 @@ func (s *botService) HandleDocumentUpload(c tb.Context, b *tb.Bot) error {
 		return c.Send(MessageTerritoryExistsInGroup(territoryName, groupName), &tb.SendOptions{}, tb.ModeMarkdown)
 	}
 
-	available := true
 	territory, err = s.storages.Congregation.CreateTerritory(&entity.CongregationTerritory{
 		CongregationID: congregation.ID,
 		GroupID:        group.ID,
 		Title:          territoryName,
 		FileID:         fileID,
 		FileType:       entity.CongregationTerritoryFileTypeDocument,
-		IsAvailable:    &available,
 	})
 	if err != nil {
 		logger.Error("failed to create territory", "err", err)
