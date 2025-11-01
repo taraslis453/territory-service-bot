@@ -211,6 +211,7 @@ func (s *botService) handleCongregationPublisherJoinRequest(c tb.Context, b *tb.
 			FirstName: c.Sender().FirstName,
 			LastName:  c.Sender().LastName,
 			Username:  c.Sender().Username,
+			UserID:    c.Sender().ID, // could use username but not everyone have it
 		}))
 		sentMessage, err := b.Send(&recepient{chatID: admin.MessengerChatID}, message, &tb.ReplyMarkup{
 			InlineKeyboard: [][]tb.InlineButton{
@@ -661,9 +662,14 @@ func (s botService) handleReturnTerritoryRequest(c tb.Context, b *tb.Bot, user *
 		}
 
 		for _, admin := range admins {
+			userID, err := strconv.ParseInt(user.MessengerUserID, 10, 64)
+			if err != nil {
+				logger.Error("failed to parse user ID", "err", err)
+				return err
+			}
 			_, err = b.Send(&recepient{
 				chatID: admin.MessengerChatID,
-			}, MessagePublisherReturnedTerritory(user.FullName, territory.Title), tb.ModeMarkdown)
+			}, MessagePublisherReturnedTerritory(user.FullName, userID, territory.Title), tb.ModeMarkdown)
 			if err != nil {
 				logger.Error("failed to send message", "err", err)
 				return err
@@ -742,7 +748,7 @@ func (s *botService) handleApprovePublisherJoinRequest(c tb.Context, b *tb.Bot, 
 		_, err = b.Edit(&editable{
 			chatID:    chatID,
 			messageID: message.MessageID,
-		}, MessageCongregationJoinRequestApprovedDone(publisher.FullName), tb.ModeMarkdown)
+		}, MessageCongregationJoinRequestApprovedDone(publisher.FullName, c.Sender().ID), tb.ModeMarkdown)
 		if err != nil {
 			logger.Error("failed to edit message", "err", err)
 			return err
@@ -804,7 +810,7 @@ func (s *botService) handleRejectPublisherJoinRequest(c tb.Context, b *tb.Bot, a
 		_, err = b.Edit(&editable{
 			chatID:    chatID,
 			messageID: message.MessageID,
-		}, MessageCongregationJoinRequestRejectedDone(publisher.FullName), tb.ModeMarkdown)
+		}, MessageCongregationJoinRequestRejectedDone(publisher.FullName, c.Sender().ID), tb.ModeMarkdown)
 		if err != nil {
 			logger.Error("failed to edit message", "err", err)
 			return err
@@ -857,6 +863,7 @@ func (s *botService) handleViewTerritoriesList(c tb.Context, user *entity.User, 
 		var sendOptions tb.SendOptions
 
 		var inUseByFullName string
+		var inUseByUserID int64
 		if territory.InUseByUserID != nil {
 
 			publisher, err := s.storages.User.GetUser(&GetUserFilter{
@@ -868,6 +875,11 @@ func (s *botService) handleViewTerritoriesList(c tb.Context, user *entity.User, 
 			}
 			if publisher != nil {
 				inUseByFullName = publisher.FullName
+				inUseByUserID, err = strconv.ParseInt(publisher.MessengerUserID, 10, 64)
+				if err != nil {
+					logger.Error("failed to parse UserID to int64", "err", err)
+					return err
+				}
 			}
 		}
 
@@ -884,6 +896,7 @@ func (s *botService) handleViewTerritoriesList(c tb.Context, user *entity.User, 
 			LastTakenAt:     territory.LastTakenAt,
 			Notes:           notes,
 			InUseByFullName: inUseByFullName,
+			InUseByUserID:   inUseByUserID,
 		})
 
 		var sendObject interface{}
@@ -1097,10 +1110,16 @@ func (s *botService) handleApproveTerritoryTakeRequest(c tb.Context, b *tb.Bot, 
 			return err
 		}
 
+		userID, err := strconv.ParseInt(publisher.MessengerUserID, 10, 64)
+		if err != nil {
+			logger.Error("failed to parse publisher user ID", "err", err)
+			return err
+		}
+
 		_, err = b.EditCaption(&editable{
 			chatID:    chatID,
 			messageID: message.MessageID,
-		}, MessageTakeTerritoryRequestApprovedDone(publisher.FullName, territory.Title), tb.ModeMarkdown)
+		}, MessageTakeTerritoryRequestApprovedDone(publisher.FullName, userID, territory.Title), tb.ModeMarkdown)
 		if err != nil {
 			logger.Error("failed to edit message", "err", err)
 			return err
@@ -1165,10 +1184,16 @@ func (s *botService) handleRejectTerritoryTakeRequest(c tb.Context, b *tb.Bot, p
 			return err
 		}
 
+		userID, err := strconv.ParseInt(publisher.MessengerUserID, 10, 64)
+		if err != nil {
+			logger.Error("failed to parse publisher user ID", "err", err)
+			return err
+		}
+
 		_, err = b.EditCaption(&editable{
 			chatID:    chatID,
 			messageID: message.MessageID,
-		}, MessageTakeTerritoryRequestRejectedDone(publisher.FullName, territory.Title), tb.ModeMarkdown)
+		}, MessageTakeTerritoryRequestRejectedDone(publisher.FullName, userID, territory.Title), tb.ModeMarkdown)
 		if err != nil {
 			logger.Error("failed to edit message", "err", err)
 			return err
