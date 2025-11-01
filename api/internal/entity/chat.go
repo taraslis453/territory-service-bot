@@ -11,7 +11,7 @@ const (
 	ApproveTakeTerritoryButton = "✅ Прийняти"
 	RejectTakeTerritoryButton  = "❌ Відхилити "
 	TakeTerritoryButton        = "🗺️ Взяти територію "
-	LeaveTerritoryNoteButton   = "📝 Залишити нотатку "
+	EditTerritoryNoteButton    = "📝 Редагувати нотатку"
 	ReturnTerritoryButton      = "🔄 Повернути територію"
 )
 

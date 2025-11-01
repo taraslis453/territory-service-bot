@@ -24,7 +24,7 @@ type CongregationTerritory struct {
 	InUseByUserID  *string `gorm:"index"`
 	// NOTE: when user takes territory, we update this field and when user returns territory, we update this field
 	LastTakenAt time.Time
-	Notes       []CongregationTerritoryNote `gorm:"foreignkey:TerritoryID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+	Note        string // Single note field - no history tracking
 }
 
 type CongregationTerritoryFileType string
@@ -33,11 +33,3 @@ var (
 	CongregationTerritoryFileTypePhoto    CongregationTerritoryFileType = "photo"
 	CongregationTerritoryFileTypeDocument CongregationTerritoryFileType = "document"
 )
-
-type CongregationTerritoryNote struct {
-	ID          string `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()"`
-	TerritoryID string `gorm:"type:uuid;index"`
-	UserID      string `gorm:"type:uuid;index"`
-	Text        string
-	CreatedAt   time.Time
-}

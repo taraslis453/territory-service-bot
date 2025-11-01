@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"html"
 	"strconv"
 	"strings"
 	"time"
@@ -35,7 +36,7 @@ const takeTerritoryButtonUnique = "-tt"
 const returnTerritoryButtonUnique = "-rt"
 const approveTerritoryTakeButtonUnique = "-att"
 const rejectTerritoryTakeButtonUnique = "-rtt"
-const leaveTerritoryNoteButtonUnique = "-ltn"
+const editTerritoryNoteButtonUnique = "-en"
 
 const messengerIDContextKey = "messengerID"
 
@@ -111,7 +112,7 @@ func (s *botService) HandleMessage(c tb.Context, b *tb.Bot) error {
 
 		return c.Send(MessageEnterCongregationName)
 	}
-	logger.Info("user found")
+	logger.Info("user found", "user", user)
 
 	switch c.Message().Text {
 	case entity.ViewTerritoryListButton:
@@ -135,8 +136,14 @@ func (s *botService) HandleMessage(c tb.Context, b *tb.Bot) error {
 	case entity.UserAdminStageSendTerritory:
 		return s.sendAddTerritoryInstruction(c)
 	case entity.UserStageLeaveTerritoryNote:
-		territoryID := strings.Replace(c.Message().ReplyTo.Entities[0].URL, "tg://btn/", "", -1)
-		return s.handleLeaveTerritoryNoteMessage(c, user, territoryID, c.Message().Text)
+		// User sent a text message while in note editing mode
+		if user.ActiveTerritoryID == "" {
+			logger.Info("no active territory context")
+			user.Stage = entity.UserStageSelectActionFromMenu
+			s.storages.User.UpdateUser(user)
+			return c.Send("Будь ласка, спочатку перегляньте свої території.")
+		}
+		return s.handleSaveTerritoryNote(c, b, user, user.ActiveTerritoryID, c.Message().Text)
 	default:
 		c.Set(messengerIDContextKey, user.MessengerChatID)
 		return s.RenderMenu(c, b)
@@ -254,7 +261,7 @@ func (s *botService) handleCongregationPublisherJoinRequest(c tb.Context, b *tb.
 		return err
 	}
 
-	return c.Send(MessageCongregationJoinRequestSent(congregation.Name), &tb.ReplyMarkup{}, tb.ModeMarkdown)
+	return c.Send(MessageCongregationJoinRequestSent(congregation.Name), &tb.ReplyMarkup{}, tb.ModeHTML)
 }
 
 type recepient struct {
@@ -366,12 +373,12 @@ func (s *botService) HandleInlineButton(c tb.Context, b *tb.Bot) error {
 	case strings.Contains(data, rejectTerritoryTakeButtonUnique):
 		parts := strings.Split(strings.TrimPrefix(c.Message().CaptionEntities[0].URL, "tg://btn/"), "/")
 		return s.handleRejectTerritoryTakeRequest(c, b, parts[0], parts[1], parts[2])
-	case strings.Contains(data, leaveTerritoryNoteButtonUnique):
-		territoryID := strings.Replace(data, leaveTerritoryNoteButtonUnique, "", -1)
-		return s.handleLeaveTerritoryNoteRequest(c, user, territoryID)
 	case strings.Contains(data, returnTerritoryButtonUnique):
 		territoryID := strings.Replace(data, returnTerritoryButtonUnique, "", -1)
 		return s.handleReturnTerritoryRequest(c, b, user, territoryID)
+	case strings.Contains(data, editTerritoryNoteButtonUnique):
+		territoryID := strings.Replace(data, editTerritoryNoteButtonUnique, "", -1)
+		return s.handleEditTerritoryNote(c, b, user, territoryID)
 	default:
 		return fmt.Errorf("unknown button: %s", data)
 	}
@@ -487,11 +494,7 @@ func (s *botService) handleViewMyTerritoryList(c tb.Context, user *entity.User) 
 	}
 
 	for _, territory := range territories {
-		var notes []string
-		for _, note := range territory.Notes {
-			notes = append(notes, note.Text)
-		}
-		caption := MessageMyTerritoryListTerritoryCaption(territory.Title, territory.LastTakenAt, notes)
+		caption := MessageMyTerritoryListTerritoryCaption(territory.Title, territory.LastTakenAt, territory.Note)
 
 		var sendObject interface{}
 		if territory.FileType == entity.CongregationTerritoryFileTypePhoto {
@@ -511,13 +514,13 @@ func (s *botService) handleViewMyTerritoryList(c tb.Context, user *entity.User) 
 			continue
 		}
 
-		err := c.Send(sendObject, &tb.SendOptions{
+		err = c.Send(sendObject, &tb.SendOptions{
 			ReplyMarkup: &tb.ReplyMarkup{
 				InlineKeyboard: [][]tb.InlineButton{
 					{
 						{
-							Unique: territory.ID + leaveTerritoryNoteButtonUnique,
-							Text:   entity.LeaveTerritoryNoteButton,
+							Unique: territory.ID + editTerritoryNoteButtonUnique,
+							Text:   entity.EditTerritoryNoteButton,
 						},
 					},
 					{
@@ -528,9 +531,9 @@ func (s *botService) handleViewMyTerritoryList(c tb.Context, user *entity.User) 
 					},
 				},
 			},
-		}, tb.ModeMarkdown)
+		}, tb.ModeHTML)
 		if err != nil {
-			logger.Error("failed to send photo", "err", err)
+			logger.Error("failed to send territory", "err", err)
 			return err
 		}
 	}
@@ -542,10 +545,10 @@ func (s *botService) sendAddTerritoryInstruction(c tb.Context) error {
 	return c.Send(MessageAddTerritoryInstruction, &tb.SendOptions{}, tb.ModeMarkdown)
 }
 
-func (s *botService) handleLeaveTerritoryNoteRequest(c tb.Context, user *entity.User, territoryID string) error {
+func (s *botService) handleEditTerritoryNote(c tb.Context, b *tb.Bot, user *entity.User, territoryID string) error {
 	logger := s.logger.
-		Named("handleLeaveTerritoryNoteRequest").
-		With("territoryID", territoryID)
+		Named("handleEditTerritoryNote").
+		With("user", user, "territoryID", territoryID)
 
 	territory, err := s.storages.Congregation.GetTerritory(&GetTerritoryFilter{
 		ID: territoryID,
@@ -559,24 +562,31 @@ func (s *botService) handleLeaveTerritoryNoteRequest(c tb.Context, user *entity.
 		return c.Send(MessageTerritoryNotFound)
 	}
 
+	if territory.InUseByUserID == nil {
+		logger.Info("territory not in use")
+		return c.Send(MessageTerritoryNotInUse)
+	}
+	if *territory.InUseByUserID != user.ID {
+		logger.Info("territory not in use by user")
+		return c.Send(MessageTerritoryCannotEditNote)
+	}
+
+	// Set user to note editing mode
 	user.Stage = entity.UserStageLeaveTerritoryNote
+	user.ActiveTerritoryID = territoryID
 	_, err = s.storages.User.UpdateUser(user)
 	if err != nil {
-		logger.Error("failed to update user", "err", err)
+		logger.Error("failed to update user stage", "err", err)
 		return err
 	}
 
-	message := fmt.Sprintf("<a href=\"tg://btn/%s\">\u200b</a> %s", territory.ID, MessageLeaveTerritoryNote(territory.Title))
-	return c.Send(message, &tb.SendOptions{
-		ReplyMarkup: &tb.ReplyMarkup{
-			ForceReply: true,
-		},
-	}, tb.ModeHTML)
+	// Send the current note in a code block for easy copying (using HTML mode for better parsing)
+	return c.Send(MessageEditTerritoryNote(territory.Title, territory.Note), tb.ModeHTML)
 }
 
-func (s *botService) handleLeaveTerritoryNoteMessage(c tb.Context, user *entity.User, territoryID, note string) error {
+func (s *botService) handleSaveTerritoryNote(c tb.Context, b *tb.Bot, user *entity.User, territoryID, note string) error {
 	logger := s.logger.
-		Named("handleLeaveTerritoryNoteMessage").
+		Named("handleSaveTerritoryNote").
 		With("user", user, "territoryID", territoryID, "note", note)
 
 	territory, err := s.storages.Congregation.GetTerritory(&GetTerritoryFilter{
@@ -597,26 +607,29 @@ func (s *botService) handleLeaveTerritoryNoteMessage(c tb.Context, user *entity.
 	}
 	if *territory.InUseByUserID != user.ID {
 		logger.Info("territory not in use by user")
-		return c.Send(MessageTerritoryCannotLeaveNote)
+		return c.Send(MessageTerritoryCannotEditNote)
 	}
 
-	_, err = s.storages.Congregation.AddTerritoryNote(&entity.CongregationTerritoryNote{
-		TerritoryID: territory.ID,
-		UserID:      user.ID,
-		Text:        note,
-	})
+	// Simply set the note field - no history tracking
+	territory.Note = note
+	_, err = s.storages.Congregation.UpdateTerritory(territory)
 	if err != nil {
-		logger.Error("failed to add territory note", "err", err)
+		logger.Error("failed to update territory note", "err", err)
 		return err
 	}
 
+	// Reset user stage back to normal after saving note
 	user.Stage = entity.UserStageSelectActionFromMenu
+	user.ActiveTerritoryID = ""
 	_, err = s.storages.User.UpdateUser(user)
 	if err != nil {
-		logger.Error("failed to update user", "err", err)
-		return err
+		logger.Error("failed to update user stage", "err", err)
 	}
 
+	// Send confirmation message
+	if note == "" {
+		return c.Send(MessageTerritoryNoteDeleted, tb.ModeMarkdown)
+	}
 	return c.Send(MessageTerritoryNoteSaved, tb.ModeMarkdown)
 }
 
@@ -663,7 +676,7 @@ func (s botService) handleReturnTerritoryRequest(c tb.Context, b *tb.Bot, user *
 		for _, admin := range admins {
 			_, err = b.Send(&recepient{
 				chatID: admin.MessengerChatID,
-			}, MessagePublisherReturnedTerritory(user.FullName, territory.Title), tb.ModeMarkdown)
+			}, MessagePublisherReturnedTerritory(user.FullName, territory.Title), tb.ModeHTML)
 			if err != nil {
 				logger.Error("failed to send message", "err", err)
 				return err
@@ -742,7 +755,7 @@ func (s *botService) handleApprovePublisherJoinRequest(c tb.Context, b *tb.Bot, 
 		_, err = b.Edit(&editable{
 			chatID:    chatID,
 			messageID: message.MessageID,
-		}, MessageCongregationJoinRequestApprovedDone(publisher.FullName), tb.ModeMarkdown)
+		}, MessageCongregationJoinRequestApprovedDone(publisher.FullName), tb.ModeHTML)
 		if err != nil {
 			logger.Error("failed to edit message", "err", err)
 			return err
@@ -783,7 +796,7 @@ func (s *botService) handleRejectPublisherJoinRequest(c tb.Context, b *tb.Bot, a
 		return err
 	}
 
-	_, err = b.Send(&recepient{chatID: publisher.MessengerChatID}, MessageCongregationJoinRequestRejected, tb.ModeMarkdown)
+	_, err = b.Send(&recepient{chatID: publisher.MessengerChatID}, MessageCongregationJoinRequestRejected, tb.ModeHTML)
 	if err != nil {
 		logger.Error("failed to send message to publisher", "err", err)
 		return err
@@ -804,7 +817,7 @@ func (s *botService) handleRejectPublisherJoinRequest(c tb.Context, b *tb.Bot, a
 		_, err = b.Edit(&editable{
 			chatID:    chatID,
 			messageID: message.MessageID,
-		}, MessageCongregationJoinRequestRejectedDone(publisher.FullName), tb.ModeMarkdown)
+		}, MessageCongregationJoinRequestRejectedDone(publisher.FullName), tb.ModeHTML)
 		if err != nil {
 			logger.Error("failed to edit message", "err", err)
 			return err
@@ -871,18 +884,11 @@ func (s *botService) handleViewTerritoriesList(c tb.Context, user *entity.User, 
 			}
 		}
 
-		var notes []string
-		if len(territory.Notes) > 0 {
-			for _, note := range territory.Notes {
-				notes = append(notes, note.Text)
-			}
-		}
-
 		caption := MessageTerritoryListTerritoryCaption(MessageTerritoryListTerritoryCaptionOptions{
 			UserRole:        user.Role,
 			Title:           territory.Title,
 			LastTakenAt:     territory.LastTakenAt,
-			Notes:           notes,
+			Note:            territory.Note,
 			InUseByFullName: inUseByFullName,
 		})
 
@@ -914,7 +920,7 @@ func (s *botService) handleViewTerritoriesList(c tb.Context, user *entity.User, 
 			markup := &tb.ReplyMarkup{InlineKeyboard: keyboard}
 			sendOptions.ReplyMarkup = markup
 		}
-		err := c.Send(sendObject, &sendOptions, tb.ModeMarkdown)
+		err := c.Send(sendObject, &sendOptions, tb.ModeHTML)
 		if err != nil {
 			logger.Error("failed to send territory", "err", err)
 			return err
@@ -944,6 +950,34 @@ func (s *botService) handleTakeTerritoryRequest(c tb.Context, b *tb.Bot, user *e
 		return c.Send(MessageTerritoryNotAvailable)
 	}
 
+	// If user is admin, assign territory immediately without approval
+	if user.Role == entity.UserRoleAdmin {
+		logger.Info("admin user taking territory without approval")
+
+		territory.InUseByUserID = &user.ID
+		territory.LastTakenAt = time.Now()
+		territory, err = s.storages.Congregation.UpdateTerritory(territory)
+		if err != nil {
+			logger.Error("failed to update territory", "err", err)
+			return err
+		}
+
+		message := MessageTakeTerritoryRequestApproved(territory.Title, territory.Note)
+
+		messageID := c.Callback().Message.ID
+		_, err = b.EditCaption(&editable{
+			chatID:    c.Callback().Message.Chat.ID,
+			messageID: fmt.Sprintf("%d", messageID),
+		}, message, tb.ModeHTML)
+		if err != nil {
+			logger.Error("failed to edit message", "err", err)
+			return err
+		}
+
+		return nil
+	}
+
+	// For publishers, require admin approval
 	admins, err := s.storages.User.ListUsers(&ListUsersFilter{
 		CongregationID: user.CongregationID,
 		Role:           entity.UserRoleAdmin,
@@ -1021,7 +1055,7 @@ func (s *botService) handleTakeTerritoryRequest(c tb.Context, b *tb.Bot, user *e
 	_, err = b.EditCaption(&editable{
 		chatID:    c.Callback().Message.Chat.ID,
 		messageID: fmt.Sprintf("%d", messageID),
-	}, MessageTakeTerritoryRequestSent, tb.ModeMarkdown)
+	}, MessageTakeTerritoryRequestSent, tb.ModeHTML)
 	if err != nil {
 		logger.Error("failed to edit message", "err", err)
 		return err
@@ -1072,13 +1106,8 @@ func (s *botService) handleApproveTerritoryTakeRequest(c tb.Context, b *tb.Bot, 
 		return err
 	}
 
-	var notes []string
-	for _, note := range territory.Notes {
-		notes = append(notes, note.Text)
-	}
-
-	message := MessageTakeTerritoryRequestApproved(territory.Title, notes)
-	_, err = b.Send(&recepient{chatID: publisher.MessengerChatID}, message, tb.ModeMarkdown)
+	message := MessageTakeTerritoryRequestApproved(territory.Title, territory.Note)
+	_, err = b.Send(&recepient{chatID: publisher.MessengerChatID}, message, tb.ModeHTML)
 	if err != nil {
 		logger.Error("failed to send message to user", "err", err)
 		return err
@@ -1100,7 +1129,7 @@ func (s *botService) handleApproveTerritoryTakeRequest(c tb.Context, b *tb.Bot, 
 		_, err = b.EditCaption(&editable{
 			chatID:    chatID,
 			messageID: message.MessageID,
-		}, MessageTakeTerritoryRequestApprovedDone(publisher.FullName, territory.Title), tb.ModeMarkdown)
+		}, MessageTakeTerritoryRequestApprovedDone(publisher.FullName, territory.Title), tb.ModeHTML)
 		if err != nil {
 			logger.Error("failed to edit message", "err", err)
 			return err
@@ -1146,7 +1175,7 @@ func (s *botService) handleRejectTerritoryTakeRequest(c tb.Context, b *tb.Bot, p
 	}
 
 	message := MessageTakeTerritoryRequestRejected(territory.Title)
-	_, err = b.Send(&recepient{chatID: publisher.MessengerChatID}, message, tb.ModeMarkdown)
+	_, err = b.Send(&recepient{chatID: publisher.MessengerChatID}, message, tb.ModeHTML)
 	if err != nil {
 		logger.Error("failed to send message to user", "err", err)
 		return err
@@ -1168,7 +1197,7 @@ func (s *botService) handleRejectTerritoryTakeRequest(c tb.Context, b *tb.Bot, p
 		_, err = b.EditCaption(&editable{
 			chatID:    chatID,
 			messageID: message.MessageID,
-		}, MessageTakeTerritoryRequestRejectedDone(publisher.FullName, territory.Title), tb.ModeMarkdown)
+		}, MessageTakeTerritoryRequestRejectedDone(publisher.FullName, territory.Title), tb.ModeHTML)
 		if err != nil {
 			logger.Error("failed to edit message", "err", err)
 			return err
@@ -1247,7 +1276,7 @@ func (s *botService) HandleImageUpload(c tb.Context, b *tb.Bot) error {
 	}
 	if territory != nil {
 		logger.Info("territory already exists")
-		return c.Send(MessageTerritoryExistsInGroup(territoryName, groupName), &tb.SendOptions{}, tb.ModeMarkdown)
+		return c.Send(MessageTerritoryExistsInGroup(territoryName, groupName), &tb.SendOptions{}, tb.ModeHTML)
 	}
 
 	territory, err = s.storages.Congregation.CreateTerritory(&entity.CongregationTerritory{
@@ -1264,7 +1293,9 @@ func (s *botService) HandleImageUpload(c tb.Context, b *tb.Bot) error {
 	logger.With("territory", territory)
 
 	logger.Info("successfully handled image upload")
-	return c.Send(fmt.Sprintf("Територія %s успішно додана в групу %s!", territoryName, groupName), &tb.SendOptions{}, tb.ModeMarkdown)
+	escapedTerritoryName := html.EscapeString(territoryName)
+	escapedGroupName := html.EscapeString(groupName)
+	return c.Send(fmt.Sprintf("Територія %s успішно додана в групу %s!", escapedTerritoryName, escapedGroupName), &tb.SendOptions{}, tb.ModeHTML)
 }
 
 func (s *botService) HandleDocumentUpload(c tb.Context, b *tb.Bot) error {
@@ -1330,7 +1361,7 @@ func (s *botService) HandleDocumentUpload(c tb.Context, b *tb.Bot) error {
 	}
 	if territory != nil {
 		logger.Info("territory already exists")
-		return c.Send(MessageTerritoryExistsInGroup(territoryName, groupName), &tb.SendOptions{}, tb.ModeMarkdown)
+		return c.Send(MessageTerritoryExistsInGroup(territoryName, groupName), &tb.SendOptions{}, tb.ModeHTML)
 	}
 
 	territory, err = s.storages.Congregation.CreateTerritory(&entity.CongregationTerritory{
@@ -1347,5 +1378,7 @@ func (s *botService) HandleDocumentUpload(c tb.Context, b *tb.Bot) error {
 	logger.With("territory", territory)
 
 	logger.Info("successfully handled image upload")
-	return c.Send(fmt.Sprintf("Територія %s успішно додана в групу %s!", territoryName, groupName), &tb.SendOptions{}, tb.ModeMarkdown)
+	escapedTerritoryName := html.EscapeString(territoryName)
+	escapedGroupName := html.EscapeString(groupName)
+	return c.Send(fmt.Sprintf("Територія %s успішно додана в групу %s!", escapedTerritoryName, escapedGroupName), &tb.SendOptions{}, tb.ModeHTML)
 }

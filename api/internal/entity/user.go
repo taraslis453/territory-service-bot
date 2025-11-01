@@ -9,6 +9,7 @@ type User struct {
 	FullName           string
 	Role               UserRole
 	Stage              UserStage
+	ActiveTerritoryID  string // Territory currently being edited
 }
 
 type UserRole string

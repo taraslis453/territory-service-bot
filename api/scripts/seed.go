@@ -37,7 +37,6 @@ func main() {
 		&entity.User{},
 		&entity.Congregation{},
 		&entity.CongregationTerritory{},
-		&entity.CongregationTerritoryNote{},
 		&entity.CongregationTerritoryGroup{},
 		&entity.RequestActionState{},
 	)
@@ -49,7 +48,6 @@ func main() {
 
 	// Clear existing data (optional - comment out if you want to keep existing data)
 	logger.Info("Clearing existing data...")
-	sql.DB.Exec("DELETE FROM congregation_territory_notes")
 	sql.DB.Exec("DELETE FROM congregation_territories")
 	sql.DB.Exec("DELETE FROM congregation_territory_groups")
 	sql.DB.Exec("DELETE FROM users")
@@ -180,6 +178,7 @@ func main() {
 			FileID:         "file_001",
 			FileType:       entity.CongregationTerritoryFileTypePhoto,
 			LastTakenAt:    time.Now().AddDate(0, -2, 0),
+			Note:           "Territory was fully covered last month. Sed do eiusmod tempor incididunt.",
 		},
 		{
 			ID:             uuid.New().String(),
@@ -199,6 +198,7 @@ func main() {
 			FileType:       entity.CongregationTerritoryFileTypePhoto,
 			InUseByUserID:  &users[1].ID,
 			LastTakenAt:    time.Now(),
+			Note:           "Lorem ipsum dolor sit amet, visited 3 buildings. Left literature.",
 		},
 		{
 			ID:             uuid.New().String(),
@@ -241,45 +241,10 @@ func main() {
 		}
 	}
 
-	// Seed Territory Notes
-	logger.Info("Seeding territory notes...")
-	territoryNotes := []entity.CongregationTerritoryNote{
-		{
-			ID:          uuid.New().String(),
-			TerritoryID: territories[2].ID,
-			UserID:      users[1].ID,
-			Text:        "Lorem ipsum dolor sit amet, visited 3 buildings. Left literature.",
-			CreatedAt:   time.Now().AddDate(0, 0, -1),
-		},
-		{
-			ID:          uuid.New().String(),
-			TerritoryID: territories[2].ID,
-			UserID:      users[1].ID,
-			Text:        "Consectetur adipiscing elit. Very well received by residents.",
-			CreatedAt:   time.Now(),
-		},
-		{
-			ID:          uuid.New().String(),
-			TerritoryID: territories[0].ID,
-			UserID:      users[0].ID,
-			Text:        "Territory was fully covered last month. Sed do eiusmod tempor incididunt.",
-			CreatedAt:   time.Now().AddDate(0, -1, 0),
-		},
-	}
-
-	for i := range territoryNotes {
-		if err := sql.DB.Create(&territoryNotes[i]).Error; err != nil {
-			logger.Error("failed to create territory note", "err", err)
-		} else {
-			logger.Info("Created territory note")
-		}
-	}
-
 	logger.Info("Database seeding completed successfully!")
 	logger.Info("Summary:")
 	logger.Info("  - Congregations: ", "count", len(congregations))
 	logger.Info("  - Territory Groups: ", "count", len(territoryGroups))
 	logger.Info("  - Users: ", "count", len(users))
 	logger.Info("  - Territories: ", "count", len(territories))
-	logger.Info("  - Territory Notes: ", "count", len(territoryNotes))
 }

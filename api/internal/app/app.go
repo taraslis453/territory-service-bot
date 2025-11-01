@@ -40,7 +40,6 @@ func Run(cfg *config.Config) {
 		&entity.User{},
 		&entity.Congregation{},
 		&entity.CongregationTerritory{},
-		&entity.CongregationTerritoryNote{},
 		&entity.CongregationTerritoryGroup{},
 		&entity.RequestActionState{},
 	)
