@@ -23,7 +23,7 @@ type (
 
 	// PostgreSQL - represents PostgreSQL database configuration.
 	PostgreSQL struct {
-		User     string `env:"TS_POSTGRESQL_USER"     env-default:"root"`
+		User     string `env:"TS_POSTGRESQL_USER"     env-default:"admin"`
 		Password string `env:"TS_POSTGRESQL_PASSWORD" env-default:"postgres"`
 		Host     string `env:"TS_POSTGRESQL_HOST"     env-default:"localhost"`
 		Database string `env:"TS_POSTGRESQL_DATABASE" env-default:"api"`

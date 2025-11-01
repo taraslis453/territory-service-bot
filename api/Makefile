@@ -6,35 +6,35 @@ help: ## Display this help message
 
 docker-up: ## Start PostgreSQL container
 	@echo "Starting PostgreSQL container..."
-	docker-compose up -d
+	docker compose up -d
 	@echo "Waiting for PostgreSQL to be ready..."
 	@sleep 5
 	@echo "PostgreSQL is ready!"
 
 docker-down: ## Stop and remove PostgreSQL container
 	@echo "Stopping PostgreSQL container..."
-	docker-compose down
+	docker compose down
 
 docker-restart: docker-down docker-up ## Restart PostgreSQL container
 
 docker-clean: ## Stop containers and remove volumes (WARNING: This will delete all data!)
 	@echo "Stopping containers and removing volumes..."
-	docker-compose down -v
+	docker compose down -v
 	@echo "All data removed!"
 
 docker-full-up: ## Start full stack (PostgreSQL + App) in Docker
 	@echo "Starting full stack..."
-	docker-compose --profile full up -d --build
+	docker compose --profile full up -d --build
 	@echo "Waiting for services to be ready..."
 	@sleep 10
 	@echo "Services are ready!"
 
 docker-full-down: ## Stop full stack
 	@echo "Stopping full stack..."
-	docker-compose --profile full down
+	docker compose --profile full down
 
 docker-full-logs: ## Show logs for full stack
-	docker-compose --profile full logs -f
+	docker compose --profile full logs -f
 
 seed: ## Run database seeding script
 	@echo "Running database seed..."
@@ -57,10 +57,10 @@ test: ## Run tests
 dev: docker-up seed run ## Setup development environment (docker + seed + run)
 
 logs: ## Show PostgreSQL container logs
-	docker-compose logs -f postgres
+	docker compose logs -f postgres
 
 psql: ## Connect to PostgreSQL using psql
-	docker-compose exec postgres psql -U admin -d api
+	docker compose exec postgres psql -U admin -d api
 
 inspect: ## Show overview of test data in database
 	@chmod +x scripts/inspect-data.sh

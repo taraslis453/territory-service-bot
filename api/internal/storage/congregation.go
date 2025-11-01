@@ -188,12 +188,3 @@ func (r *congregationStorage) UpdateTerritory(territory *entity.CongregationTerr
 
 	return territory, nil
 }
-
-func (r *congregationStorage) AddTerritoryNote(territoryNote *entity.CongregationTerritoryNote) (*entity.CongregationTerritoryNote, error) {
-	err := r.Instance().Create(territoryNote).Error
-	if err != nil {
-		return nil, err
-	}
-
-	return territoryNote, nil
-}
