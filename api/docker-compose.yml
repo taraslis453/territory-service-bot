@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: territory-service-db
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: api
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d api"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - territory-network
+
+  app:
+    profiles: ["full"]  # Only runs when explicitly requested
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: territory-service-app
+    environment:
+      TS_LOG_LEVEL: debug
+      TS_POSTGRESQL_USER: admin
+      TS_POSTGRESQL_PASSWORD: postgres
+      TS_POSTGRESQL_HOST: postgres
+      TS_POSTGRESQL_DATABASE: api
+      TS_TELEGRAM_BOT_TOKEN: ${TS_TELEGRAM_BOT_TOKEN}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - territory-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  territory-network:
+    driver: bridge
+
