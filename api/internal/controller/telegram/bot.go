@@ -2,7 +2,10 @@ package telegram
 
 import (
 	"bytes"
+	"errors"
+	"net"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/DataDog/gostackparse"
@@ -20,13 +23,24 @@ type Options struct {
 	Config   *config.Config
 }
 
+const (
+	maxRetries   = 5
+	initialDelay = 1 * time.Second
+	maxDelay     = 30 * time.Second
+)
+
 func NewBot(options *Options) error {
 	pref := tb.Settings{
 		Token:  options.Config.Telegram.BotToken,
 		Poller: &tb.LongPoller{Timeout: 10 * time.Second},
 	}
 
-	b, err := tb.NewBot(pref)
+	var b *tb.Bot
+	err := retryWithBackoff(options.Logger, func() error {
+		var retryErr error
+		b, retryErr = tb.NewBot(pref)
+		return retryErr
+	}, "telegram.NewBot")
 	if err != nil {
 		return err
 	}
@@ -53,6 +67,85 @@ func NewBot(options *Options) error {
 	b.Start()
 
 	return nil
+}
+
+// isRetryableError checks if an error is retryable (network/TLS errors)
+func isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := err.Error()
+	// Check for TLS handshake timeout
+	if strings.Contains(errStr, "TLS handshake timeout") {
+		return true
+	}
+	// Check for other network-related errors
+	if strings.Contains(errStr, "timeout") {
+		return true
+	}
+	if strings.Contains(errStr, "connection refused") {
+		return true
+	}
+	if strings.Contains(errStr, "no such host") {
+		return true
+	}
+	// Check for network errors
+	var netErr net.Error
+	return errors.As(err, &netErr)
+}
+
+// retryWithBackoff retries a function with exponential backoff
+func retryWithBackoff(logger logging.Logger, fn func() error, operation string) error {
+	var lastErr error
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			// Calculate delay with exponential backoff: 1s, 2s, 4s, 8s, 16s (capped at maxDelay)
+			delay := initialDelay * time.Duration(1<<uint(attempt-1))
+			if delay > maxDelay {
+				delay = maxDelay
+			}
+			logger.Warn("retrying operation",
+				"operation", operation,
+				"attempt", attempt+1,
+				"maxAttempts", maxRetries,
+				"delay", delay,
+				"lastError", lastErr)
+			time.Sleep(delay)
+		}
+
+		err := fn()
+		if err == nil {
+			if attempt > 0 {
+				logger.Info("operation succeeded after retries",
+					"operation", operation,
+					"attempts", attempt+1)
+			}
+			return nil
+		}
+
+		lastErr = err
+
+		// Only retry if it's a retryable error
+		if !isRetryableError(err) {
+			logger.Error("non-retryable error encountered",
+				"operation", operation,
+				"error", err)
+			return err
+		}
+
+		logger.Warn("retryable error encountered",
+			"operation", operation,
+			"attempt", attempt+1,
+			"error", err)
+	}
+
+	logger.Error("operation failed after all retries",
+		"operation", operation,
+		"maxAttempts", maxRetries,
+		"lastError", lastErr)
+	return lastErr
 }
 
 func wrapHandler(c tb.Context, b *tb.Bot, logger logging.Logger, handler func(c tb.Context, b *tb.Bot) error) error {
